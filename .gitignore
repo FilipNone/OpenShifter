@@ -1,0 +1,26 @@
+__pycache__/
+*.py[cod]
+*.o
+*.so
+.venv/
+
+# Instructions for coding agents stay local.
+AGENTS.md
+CLAUDE.md
+.claude/
+ROADMAP.md
+SPEC.md
+TASKS.md
+
+# Build output.
+firmware/build/
+
+# Vendor binaries, research inputs and the GPL-2 upstream driver stay local.
+# The stock image for the differential tests goes in firmware/stock/.
+research/
+*.bin
+*.exe
+*.msix
+*.appx
+*.msixbundle
+*.appxbundle

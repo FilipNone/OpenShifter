@@ -1,0 +1,117 @@
+# VelocityOne Multi-Shift: update protocol and USB interface
+
+Sources:
+- the update code in VelocityOne Tuner 1.1.13.0 (.NET; decompiled)
+- the stock firmware image TBRS004-20241224 (disassembled, then run in the emulator under `tests/emu`)
+- read-only observation of a stock unit
+
+Hardware: an AIR32F103 (STM32F103-compatible Cortex-M3) with an MLX90393 magnetic sensor, RGB LEDs and USB full speed.
+
+## Flash map
+
+| Address | Contents |
+|---|---|
+| `0x08000000–0x0800EFFF` | vendor bootloader (USB `10f5:7097`), never written by updates |
+| `0x0800F000` | settings page, shared with the bootloader |
+| `0x08010000–0x0801FFFF` | application, raw vector table first, no header or checksum |
+
+Settings page, as 16-bit halfwords:
+
+| Halfword | Meaning |
+|---|---|
+| 0 | `1` = stay in the bootloader at the next reset (set by `24 00`) |
+| 4 | mode: 0 = H-pattern, 1 = sequential, 2 = handbrake |
+| 5, 6 | handbrake rest / pulled y |
+| 7 + 4k, 8 + 4k | calibrated x, y of gear k+1 (k = 0..7) |
+| 0x27, 0x28 | handbrake rest / pulled x |
+| 0x29 | auxiliary flag |
+| 0x2a–0x36 | 13 auxiliary bytes (`24 23`) |
+| 0x37–0x3e | per-gear match radius |
+| 0x3f, 0x40 | sequential up / down thresholds |
+| 0x63 | `0x1254` once calibration is complete |
+
+Stock assumes 2 KB flash pages and rewrites halfwords 0–0x3ff. OpenShift preserves everything outside halfwords 0–99.
+
+## Update protocol (bootloader)
+
+Observed on a real unit (stock to stock, flashed from Linux with `tools/openshift_flash.py`, 2026-10-20):
+
+- The bootloader enumerates as `10f5:7097`, bcdDevice 0.03, with the same manufacturer, product and serial strings as the application. It is a HID device (`hid-generic` binds it).
+- The whole update took about 13 s from `24 00` until the application was back.
+- **An update erases the settings page.** Afterwards stock reported exactly the values it reports from an erased page (checked in the emulator), so the calibration is lost and must be redone. Uncalibrated, stock falls back to gear learning.
+
+Every write is a HID output report with ID `0x24`, 64 bytes including the ID.
+Tuner sends it on the interrupt OUT endpoint.
+
+| Device | Write | Effect |
+|---|---|---|
+| application `10f5:7096` | `24 00` | sets the settings flag and resets into the bootloader, which enumerates as `10f5:7097` |
+| bootloader `10f5:7097` | `24 01` | erases the application area; Tuner then waits 2000 ms |
+| bootloader | `24 02 iL iH d0…d59` | programs `image[60·i : 60·i+60]`; i is a little-endian int16; the buffer starts as 64 × `0xFF`, so a short last chunk is `0xFF`-padded; Tuner waits 15 ms after each chunk |
+| bootloader | `24 03` | update complete; the application starts and enumerates as `10f5:7096` |
+
+Commands are zero-padded to 64 bytes, which is how Windows hidapi sends a
+2-byte buffer to a 64-byte report. Tuner does not compute or check an MD5,
+checksum or signature anywhere. If Tuner
+finds the shifter already in update mode, it starts at `24 01`.
+
+### What is not known
+
+The bootloader was never captured or run (it is not in the update package).
+These points are inferred, not observed:
+
+- **Whether it validates an image or reports errors.** Tuner never reads anything back.
+- **What clears the stay-in-bootloader flag.** It is probably `24 03`. If so, an interrupted update leaves the unit in update mode, and the flasher's retry advice depends on that.
+- **Its report descriptor.** The flasher refuses to erase if `10f5:7097` does not declare output report `0x24`.
+
+## Application USB interface (stock and OpenShift)
+
+The device descriptor:
+- `10f5:7096`, bcdDevice 1.11
+- manufacturer and product strings "VelocityOne Multi-Shift", including stock's two trailing UTF-16 NULs
+- serial number "TBRS004-20241224"
+
+There is one HID interface, with EP1 IN and EP1 OUT, both interrupt and 64 bytes.
+
+Input reports, sent every 2 ms:
+
+- **ID 1, 5 bytes:** `01 gears buttons hb_lo hb_hi`.
+  - `gears`: bit n is gear n+1 in H-pattern mode.
+  - `buttons`: bit 0 is sequential down, bit 1 sequential up, bit 2 button A.
+  - `hb_lo`, `hb_hi`: the 16-bit handbrake axis.
+- **ID 0x24, 64 bytes, status:**
+
+  | Byte(s) | Contents |
+  |---|---|
+  | 1 | `0x20` |
+  | 2–3, 4–5 | x, y, big-endian |
+  | 6–8 | LED RGB |
+  | 9–12 | handbrake rest / pulled y |
+  | 13 + 6k | gear k+1 x, y, big-endian |
+  | 17, 29, 30, 35, 36, 41, 42, 47 | per-gear radius / 8 |
+  | 18 | flags: A, B, H/SEQ switch, handbrake mode, seq down, seq up |
+  | 48 | r / 8 |
+  | 59–62 | handbrake rest / pulled x |
+  | 63 | mode |
+
+Output report ID 0x24 (64 bytes) commands:
+
+| Command | Effect |
+|---|---|
+| `24 00` | enter the bootloader (LEDs turn yellow first) |
+| `24 20 _ _ _ _ R G B` | LED colour, not saved |
+| `24 21 n` | calibrate target n: 1–8 gears, 9 handbrake rest / neutral, 10 handbrake pulled; saved |
+| `24 22` | cycle mode (as button B); saved |
+| `24 23 b0…b12` | 13 auxiliary bytes; saved |
+| `24 24 g v` | per-gear radius byte for gear g = 1..8: shown in report 0x24 only, not stored (stock behaviour) |
+
+Without a USB host, the unit streams 16-byte packets on USART1 (PA9) every 5 ms:
+`24 20 gears flags hb_hi hb_lo R G B 0… 11`.
+
+## Stock firmware quirks worth knowing
+
+- **Delays run a third of their nominal length.** Stock configures `delay_ms()` for a 72 MHz clock but runs the PLL at 216 MHz. OpenShift runs at 72 MHz and uses the effective durations (`STOCK_MS()` in `firmware/src/board.h`).
+- **Control SET_REPORT is unsafe on stock.** A 64-byte SET_REPORT crashes stock (it jumps to address 0); short ones are ignored. Send commands on the interrupt OUT endpoint, as Tuner and hidraw do.
+- **GET_REPORT returns junk on stock:** a fixed buffer of unrelated RAM.
+- **Learning can capture the handbrake pose as gear 4.** Before calibration is complete, holding the lever steady at about (−300, −1500), which is the handbrake-pulled target, is learned as gear 4 with a small radius. Calibrate targets 9 and 10 before the gears, or recalibrate gear 4 afterwards.
+- **A unit powered up in gear shows no gear** until the lever has passed through neutral: the first pose seen is taken as neutral.

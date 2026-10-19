@@ -97,7 +97,6 @@ firmware, not observed on hardware. See [docs/protocol.md](docs/protocol.md#what
 | `tests/emu/` | Cortex-M3 + AIR32F103 + MLX90393 + USB host emulator (unicorn) |
 | `docs/protocol.md` | update protocol, HID reports and commands, settings page |
 | `docs/testing.md` | what is verified and how, differences from stock, known gaps |
-| `SPEC.md`, `ROADMAP.md`, `TASKS.md` | requirements, phases and current work |
 
 ## Tests
 

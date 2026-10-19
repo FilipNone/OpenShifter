@@ -98,7 +98,7 @@ Some timings differ by a few tens of milliseconds, all measured in the emulator:
 
 - **Real hardware, beyond a first run.** On 2026-10-20 one unit was flashed
   from Linux with the stock image and then with OpenShift 0.1.0, and OpenShift
-  worked. The item-by-item hardware checklist in `TASKS.md` is not done yet.
+  worked. An item-by-item hardware checklist is not done yet.
   The emulator models only what both firmwares use, and its peripheral models
   were written from the STM32F103 reference manual and from what the stock
   image does. The biggest risks are:

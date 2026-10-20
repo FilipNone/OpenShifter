@@ -1,5 +1,5 @@
 # OpenShift firmware. Needs clang + lld (LLVM >= 15); no libc, no libgcc.
-VERSION ?= 0.1.0
+VERSION ?= 0.3.2
 BUILD   := build
 TARGET  := $(BUILD)/openshift
 SRCS    := $(wildcard src/*.c)
@@ -22,7 +22,7 @@ FLASHER := $(PYTHON) ../tools/openshift_flash.py
 .PHONY: all clean flash flash-stock size test
 all: $(TARGET).bin size
 
-$(BUILD)/%.o: src/%.c src/*.h | $(BUILD)
+$(BUILD)/%.o: src/%.c src/*.h Makefile | $(BUILD)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(TARGET).elf: $(OBJS) linker.ld

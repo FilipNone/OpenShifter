@@ -33,33 +33,36 @@ static volatile uint8_t sensor_ready, sensor_paused, sensor_off_timer, sensor_of
 static volatile uint8_t asleep, led_dirty;
 static uint16_t suspend_ms, wake_ms;
 
-/* IN reports waiting for EP1 (stock queues both every 2 ms, sends one per ms) */
-#define INQ 4
-static uint8_t inq_data[INQ][64];
-static uint8_t inq_len[INQ];
-static uint8_t inq_head, inq_tail;
+/* IN reports due on EP1. Both are due every 2 ms and EP1 sends one per ms.
+ * Up to 0.3.0 they went through a small queue. A host polling only every 2 ms
+ * kept it full, report 1 (queued first) took each free slot and report 0x24
+ * almost never went out. Now each report is a flag, the two take turns, and
+ * each is built when it is sent. */
+#define IN_R1  0x01u
+#define IN_R36 0x02u
+static uint8_t in_due, in_next = IN_R1;
 
 static volatile uint32_t hb_pendsv, hb_main;
 
 /* ---- helpers ---------------------------------------------------------- */
 
-static void inq_push(const uint8_t *p, unsigned n)
+static void in_send_one(void)
 {
-    uint8_t next = (uint8_t)((inq_head + 1) % INQ);
-    if (next == inq_tail)
-        return;   /* host not polling: drop newest */
-    for (unsigned i = 0; i < n; i++)
-        inq_data[inq_head][i] = p[i];
-    inq_len[inq_head] = (uint8_t)n;
-    inq_head = next;
-}
-
-static void inq_flush_one(void)
-{
-    if (inq_tail == inq_head || !usb_in_ready())
+    if (!in_due || !usb_in_ready())
         return;
-    usb_in_send(inq_data[inq_tail], inq_len[inq_tail]);
-    inq_tail = (uint8_t)((inq_tail + 1) % INQ);
+    uint8_t which = (in_due & in_next) ? in_next : in_due;
+    uint8_t r[64];
+    if (which & IN_R1) {
+        shifter_report1(&sh, r);
+        usb_in_send(r, 5);
+        in_due &= (uint8_t)~IN_R1;
+        in_next = IN_R36;
+    } else {
+        shifter_report36(&sh, r);
+        usb_in_send(r, 64);
+        in_due &= (uint8_t)~IN_R36;
+        in_next = IN_R1;
+    }
 }
 
 static void sensor_off(void)
@@ -126,16 +129,11 @@ void pendsv_handler(void)
         apply_actions(act);
 
     if (usb_configured) {
-        if (!(ms % 2)) {
-            uint8_t r[64];
-            shifter_report1(&sh, r);
-            inq_push(r, 5);
-            shifter_report36(&sh, r);
-            inq_push(r, 64);
-        }
-        inq_flush_one();
+        if (!(ms % 2))
+            in_due = IN_R1 | IN_R36;
+        in_send_one();
     } else {
-        inq_head = inq_tail = 0;
+        in_due = 0;
         if (!(ms % 5)) {
             uint8_t p[16];
             shifter_uart_packet(&sh, p);
@@ -172,9 +170,6 @@ void pendsv_handler(void)
             asleep = 0;
             wake_ms = 0;
             sensor_off();   /* re-initialised 2 s later */
-            sh.led_rgb[0] = 0xff;
-            sh.led_rgb[1] = 0xff;
-            sh.led_rgb[2] = 0;
             led_dirty = 1;
         }
     }
@@ -275,7 +270,7 @@ int main(void)
         }
 
         if (boot_pending && !save_pending) {
-            /* "24 00": show the colour, then hand over to the bootloader. */
+            /* "24 00": show yellow, then hand over to the bootloader. */
             uint32_t t0 = g_ms;
             while ((led_dirty || leds_busy()) && g_ms - t0 < 200)
                 hb_main++;

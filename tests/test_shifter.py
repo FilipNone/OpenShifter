@@ -52,7 +52,10 @@ def setUpModule():
             ('sh_isqrt', u32, [u32]), ('t_sizeof', ctypes.c_uint, []),
             ('sh_sincos_q30', None, [u32, ctypes.POINTER(i32), ctypes.POINTER(i32)]),
             ('shifter_sensor_frame', i32, [ctypes.c_void_p, ctypes.c_char_p]),
-            ('shifter_command', ctypes.c_uint, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint])):
+            ('shifter_command', ctypes.c_uint, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint]),
+            ('shifter_buttons', ctypes.c_uint, [ctypes.c_void_p, i32, i32, i32]),
+            ('shifter_led_grb', None, [ctypes.c_void_p, i32, ctypes.c_char_p]),
+            ('shifter_report36', None, [ctypes.c_void_p, ctypes.c_char_p])):
         f = getattr(lib, name)
         f.restype, f.argtypes = res, args
 
@@ -157,7 +160,7 @@ GEARS = [(1986, 2400, 0x80), (2400, -1886, 0x80), (40, 3175, 0x80), (70, -2536, 
          (-1956, 1720, 0x80), (-2576, -1856, 0x80), (-866, 170, 0x70), (-1116, -236, 0x70)]
 
 
-class Core(unittest.TestCase):
+class CoreHelpers:
     def new(self, settings=None):
         s = ctypes.create_string_buffer(lib.t_sizeof())
         st = (ctypes.c_uint16 * 100)(*(settings or [0xFFFF] * 100))
@@ -177,6 +180,8 @@ class Core(unittest.TestCase):
     def cmd(self, s, *b):
         return lib.shifter_command(s, bytes(b), len(b))
 
+
+class Core(CoreHelpers, unittest.TestCase):
     def test_empty_frames_power_cycle_sensor(self):
         s = self.new()
         for i in range(1, 100):
@@ -233,6 +238,208 @@ class Core(unittest.TestCase):
             self.assertEqual(self.report1(t)[1], 1 << (k - 1), f'gear {k}')
             self.feed(t, 0, 0)
             self.assertEqual(self.report1(t)[1], 0, f'neutral after gear {k}')
+
+
+DEFAULT_GAINS = (255, 162, 96)
+
+
+def gamma22(v):
+    return 0 if v == 0 else max(1, round(255 * (v / 255) ** 2.2))
+
+
+def led(r, g, b, gains=DEFAULT_GAINS, gamma=False):
+    """One LED as it goes on the wire: G, R, B after the optional gamma, white
+    balance and stock's 2/3 brightness cap."""
+    def level(c, v):
+        return (gamma22(v) if gamma else v) * gains[c] // 255 * 2 // 3
+    return bytes([level(1, g), level(0, r), level(2, b)])
+
+
+OFF = bytes(3)
+WARM = led(255, 182, 78)
+
+
+class Options(CoreHelpers, unittest.TestCase):
+    """OpenShift settings: logo LED, colour, handbrake and high/low buttons."""
+
+    def leds(self, s, asleep=0):
+        out = ctypes.create_string_buffer(9)
+        lib.shifter_led_grb(s, asleep, out)
+        return [out.raw[i:i + 3] for i in (0, 6, 3)]   # handbrake, high/low, logo
+
+    def report36(self, s):
+        out = ctypes.create_string_buffer(64)
+        lib.shifter_report36(s, out)
+        return out.raw
+
+    def scan(self, s, h, b=0, a=0, n=1):
+        act = 0
+        for _ in range(n):
+            act |= lib.shifter_buttons(s, h, b, a)
+        return act
+
+    def click(self, s, h, b=0, a=0):
+        """Press for two scans, then release."""
+        return self.scan(s, h, b, a, 2) | self.scan(s, h)
+
+    def save(self, s):
+        st = (ctypes.c_uint16 * 100)(*[0xFFFF] * 100)
+        lib.shifter_save(s, st)
+        return list(st)
+
+    def test_defaults(self):
+        s = self.new()
+        self.scan(s, 1)
+        self.assertEqual(self.leds(s), [WARM, WARM, OFF])
+        r = self.report36(s)
+        self.assertEqual(r[6:9], bytes([255, 182, 78]))
+        self.assertEqual(r[23], 0x80)
+        self.assertEqual(self.leds(s, asleep=1), [OFF] * 3)
+
+    def test_commands(self):
+        s = self.new()
+        self.scan(s, 1)
+        self.assertEqual(self.cmd(s, 0x24, 0x31, 1), SH_ACT_LED | SH_ACT_SAVE)
+        self.assertEqual(self.leds(s), [WARM, WARM, WARM])
+        self.assertEqual(self.cmd(s, 0x24, 0x30, 10, 200, 30), SH_ACT_LED | SH_ACT_SAVE)
+        self.assertEqual(self.leds(s), [led(10, 200, 30)] * 3)
+        self.assertEqual(self.report36(s)[6:9], bytes([10, 200, 30]))
+        self.assertEqual(self.cmd(s, 0x24, 0x31, 0), SH_ACT_LED | SH_ACT_SAVE)
+        self.assertEqual(self.leds(s)[2], OFF)
+        for bad in ((0x31, 2), (0x32, 2), (0x3f, 3)):
+            self.assertEqual(self.cmd(s, 0x24, *bad), 0, bad)
+        # 24 20 (Tuner) changes the live colour only.
+        self.assertEqual(self.cmd(s, 0x24, 0x20, 0, 0, 0, 0, 1, 2, 3), SH_ACT_LED)
+        self.assertEqual(self.report36(s)[6:9], bytes([1, 2, 3]))
+        self.assertEqual(self.save(s)[0x51:0x54], [10, 200, 30])
+
+    def test_settings_round_trip(self):
+        s = self.new()
+        self.cmd(s, 0x24, 0x30, 1, 2, 3)
+        self.cmd(s, 0x24, 0x31, 1)
+        self.cmd(s, 0x24, 0x32, 1)
+        st = self.save(s)
+        self.assertEqual(st[0x50:0x54], [0xA503, 1, 2, 3])
+        t = self.new(st)
+        self.assertEqual(self.report36(t)[6:9], bytes([1, 2, 3]))
+        self.assertEqual(self.report36(t)[23], 0x83)
+        # An erased or zeroed page, or one without the marker, means the
+        # defaults; so does an out of range colour.
+        for bad in ([0xFFFF] * 4, [0] * 4, [3, 1, 2, 3], [0xA501, 0x100, 0, 0]):
+            st[0x50:0x54] = bad
+            t = self.new(st)
+            self.assertEqual(self.report36(t)[6:9], bytes([255, 182, 78]), bad)
+            self.assertEqual(self.report36(t)[23], 0x81 if bad[0] == 0xA501 else 0x80, bad)
+        t = self.new([0] * 100)
+        self.assertEqual(self.report36(t)[6:9], bytes([255, 182, 78]), 'all-zero page')
+
+    def test_handbrake_button(self):
+        s = self.new()
+        self.scan(s, 1)
+        # H: a plain button (report 1, bit 3); the mode stays H-pattern.
+        self.scan(s, 1, b=1, n=3)
+        self.assertEqual(self.report1(s)[2], 0x08)
+        self.scan(s, 1)
+        self.assertEqual(self.report1(s)[2], 0)
+        self.assertEqual(self.report36(s)[63], 0)
+        self.assertEqual(self.leds(s)[0], WARM)
+        # SEQ: the LED is off, and green while handbrake mode is on.
+        self.scan(s, 0)
+        self.assertEqual(self.report36(s)[63], 1)
+        self.assertEqual(self.leds(s)[0], OFF)
+        self.scan(s, 0, b=1, n=2)
+        self.assertEqual(self.report1(s)[2], 0, 'no button bit in SEQ')
+        self.assertTrue(self.scan(s, 0) & SH_ACT_LED)
+        self.assertEqual(self.report36(s)[63], 2)
+        self.assertEqual(self.leds(s)[0], led(0, 255, 0), 'green in handbrake mode')
+        self.click(s, 0, b=1)
+        self.assertEqual(self.report36(s)[63], 1)
+        self.assertEqual(self.leds(s)[0], OFF)
+        # Back to H: the colour again.
+        self.scan(s, 1)
+        self.assertEqual(self.report36(s)[63], 0)
+        self.assertEqual(self.leds(s)[0], WARM)
+
+    def test_high_low_button(self):
+        s = self.new()
+        self.scan(s, 1)
+        self.scan(s, 1, a=1, n=3)
+        self.assertEqual(self.report1(s)[2], 0x04)
+        self.scan(s, 1)
+        self.assertEqual(self.report1(s)[2], 0)
+        self.assertEqual(self.leds(s)[1], WARM)
+
+        self.cmd(s, 0x24, 0x32, 1)
+        red, green = led(255, 0, 0), led(0, 255, 0)
+        self.assertEqual(self.leds(s)[1], red)
+        self.assertEqual(self.report36(s)[23], 0x82)
+        self.assertTrue(self.scan(s, 1, a=1) & SH_ACT_LED)
+        self.scan(s, 1, a=1, n=10)
+        self.scan(s, 1, n=5)
+        self.assertEqual(self.report1(s)[2], 0x04, 'latched on')
+        self.assertEqual(self.leds(s)[1], green)
+        self.assertEqual(self.report36(s)[23], 0x86)
+        self.click(s, 1, a=1)
+        self.assertEqual(self.report1(s)[2], 0)
+        self.assertEqual(self.leds(s)[1], red)
+        # The latch also works in SEQ, and switching back to button mode clears it.
+        self.click(s, 0, a=1)
+        self.assertEqual(self.report1(s)[2], 0x04)
+        self.cmd(s, 0x24, 0x32, 0)
+        self.assertEqual(self.report1(s)[2], 0)
+        self.assertEqual(self.leds(s)[1], WARM)
+
+    def test_colour_correction(self):
+        s = self.new()
+        self.scan(s, 1)
+        r = self.report36(s)
+        self.assertEqual((r[24], r[53], r[54]), DEFAULT_GAINS)
+        self.assertEqual(r[23], 0x80, 'gamma off by default')
+        # Gamma, every level, with full gains.
+        self.cmd(s, 0x24, 0x33, 255, 255, 255, 0)
+        self.assertEqual(self.cmd(s, 0x24, 0x34, 1), SH_ACT_LED | SH_ACT_SAVE)
+        self.assertEqual(self.report36(s)[23], 0x88)
+        for v in range(256):
+            self.cmd(s, 0x24, 0x20, 0, 0, 0, 0, v, v, v)
+            self.assertEqual(self.leds(s)[0], bytes([gamma22(v) * 2 // 3]) * 3, v)
+        self.assertEqual(self.cmd(s, 0x24, 0x34, 2), 0)
+        # Gains, saved only when asked.
+        self.assertEqual(self.cmd(s, 0x24, 0x33, 200, 100, 50, 0), SH_ACT_LED)
+        self.assertEqual(self.cmd(s, 0x24, 0x33, 200, 100, 50, 1), SH_ACT_LED | SH_ACT_SAVE)
+        self.cmd(s, 0x24, 0x20, 0, 0, 0, 0, 255, 128, 64)
+        self.assertEqual(self.leds(s)[0], led(255, 128, 64, (200, 100, 50), gamma=True))
+        r = self.report36(s)
+        self.assertEqual((r[24], r[53], r[54]), (200, 100, 50))
+        self.assertEqual(self.cmd(s, 0x24, 0x33, 1, 2, 3, 2), 0)
+        st = self.save(s)
+        self.assertEqual(st[0x50], 0xA508)
+        self.assertEqual(st[0x54:0x57], [200, 100, 50])
+        t = self.new(st)
+        self.assertEqual(self.report36(t)[23], 0x88)
+        # Gamma off and full gains give stock's output.
+        self.cmd(t, 0x24, 0x34, 0)
+        self.cmd(t, 0x24, 0x33, 255, 255, 255, 0)
+        self.cmd(t, 0x24, 0x20, 0, 0, 0, 0, 255, 128, 64)
+        self.scan(t, 1)
+        self.assertEqual(self.leds(t)[0], bytes([128 * 2 // 3, 255 * 2 // 3, 64 * 2 // 3]))
+        # Without the marker the gains are the defaults.
+        st[0x50] = 0
+        r = self.report36(self.new(st))
+        self.assertEqual((r[24], r[53], r[54]), DEFAULT_GAINS)
+
+    def test_led_identify_and_update(self):
+        s = self.new()
+        self.scan(s, 1)
+        white = led(255, 255, 255)
+        for i in range(3):
+            self.assertEqual(self.cmd(s, 0x24, 0x3f, i), SH_ACT_LED)
+            out = ctypes.create_string_buffer(9)
+            lib.shifter_led_grb(s, 0, out)
+            self.assertEqual(out.raw, bytes(3 * i) + white + bytes(6 - 3 * i))
+        self.cmd(s, 0x24, 0x3f, 0xff)
+        self.assertEqual(self.leds(s), [WARM, WARM, OFF])
+        self.cmd(s, 0x24, 0x00)
+        self.assertEqual(self.leds(s), [led(255, 255, 0)] * 3)
 
 
 if __name__ == '__main__':

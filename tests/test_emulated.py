@@ -25,6 +25,7 @@ except ImportError:
 
 import openshift_flash as flasher  # noqa: E402
 from harness import OPENSHIFT_BIN, Rig, openshift_image, stock_image  # noqa: E402
+from test_shifter import led  # noqa: E402  (LED colour reference)
 
 if not OPENSHIFT_BIN.exists():
     raise unittest.SkipTest('build the firmware first: make -C firmware')
@@ -80,8 +81,7 @@ class OpenShift(EmulatedCase):
         r.m.run(ms=1000)
         self.assertEqual(r.m.stopped_reason, 'reset')
         self.assertEnteredBootloader(r)
-        # yellow, GRB order, at stock's 2/3 brightness
-        self.assertEqual(r.m.led_frames[-1][1], bytes.fromhex('aaaa00') * 3, 'LEDs not yellow')
+        self.assertEqual(r.m.led_frames[-1][1], led(255, 255, 0) * 3, 'LEDs not yellow')
 
     def test_both_buttons_at_power_up_enter_bootloader(self):
         r = Rig(openshift_image())
@@ -149,26 +149,123 @@ class OpenShift(EmulatedCase):
 
     def test_set_report_runs_commands(self):
         # Stock ignores short SET_REPORTs and crashes on 64-byte ones.
-        r = Rig(openshift_image()).boot()
+        r = Rig(openshift_image(), h_pattern=True).boot()
         cmd = bytes([0x24, 0x20, 0, 0, 0, 0, 0x10, 0x20, 0x30]) + bytes(55)
         self.assertEqual(r.control(0x21, 0x09, 0x0224, 0, 64, cmd), b'')
         r.run(200)
-        self.assertEqual(r.m.led_frames[-1][1], bytes.fromhex('150a20') * 3)   # GRB, 2/3
+        # Chain order handbrake, logo, high/low; logo off by default.
+        c = led(0x10, 0x20, 0x30)
+        self.assertEqual(r.m.led_frames[-1][1], c + bytes(3) + c)
+
+    def test_both_reports_flow_when_the_host_polls_slowly(self):
+        # Both reports are due every 2 ms and EP1 sends one per poll. 0.3.0
+        # queued them, and a host polling every 2 ms got only report 1.
+        for miss, least in ((lambda n: n % 7 == 0, 350), (lambda n: n % 2 == 0, 200)):
+            r = Rig(openshift_image()).boot()
+            r.m.host.miss = miss
+            n = len(r.m.host.in_reports)
+            r.run(1000)
+            for rid in (0x01, 0x24):
+                times = [t for t, rep in r.m.host.in_reports[n:] if rep[0] == rid]
+                self.assertGreater(len(times), least, hex(rid))
+                gap = max(b - a for a, b in zip(times, times[1:]))
+                self.assertLess(gap, 10_000, f'report {rid:#x}: gap over 10 ms')
+
+    def test_options_persist_and_drive_leds(self):
+        r = Rig(openshift_image(), h_pattern=True).boot()
+        warm = led(255, 182, 78)
+        self.assertEqual(r.m.led_frames[-1][1], warm + bytes(3) + warm)
+        self.assertEqual(r.last(0x24)[6:9], bytes([255, 182, 78]))
+        r.command(0x24, 0x30, 30, 60, 90)
+        r.command(0x24, 0x31, 1)
+        r.command(0x24, 0x32, 1)
+        blue, red = led(30, 60, 90), led(255, 0, 0)
+        self.assertEqual(r.m.led_frames[-1][1], blue + blue + red)
+        self.assertEqual(r.last(0x24)[23], 0x83)
+        self.assertFlashClean(r)
+
+        r = r.reboot(h_pattern=True).boot()
+        self.assertEqual(r.m.led_frames[-1][1], blue + blue + red)
+        self.assertEqual(r.last(0x24)[6:9], bytes([30, 60, 90]))
+        # High/low latches; the handbrake button is button 12 in H.
+        r.press('PA4', ms=100)
+        r.press('PA4', hold=False, ms=100)
+        self.assertEqual(r.last(0x01)[2], 0x04)
+        self.assertEqual(r.m.led_frames[-1][1][6:9], led(0, 255, 0))
+        r.press('PA5', ms=100)
+        self.assertEqual(r.last(0x01)[2], 0x0C)
+        r.press('PA5', hold=False, ms=100)
+        self.assertEqual(r.last(0x01)[2], 0x04)
+        self.assertEqual(r.last(0x24)[63], 0, 'still H-pattern')
+        # In SEQ the handbrake LED is off, and green in handbrake mode.
+        r.press('PB10', hold=False, ms=200)
+        self.assertEqual(r.m.led_frames[-1][1][:3], bytes(3))
+        r.press('PA5', ms=100)
+        r.press('PA5', hold=False, ms=100)
+        self.assertEqual(r.last(0x24)[63], 2)
+        self.assertEqual(r.m.led_frames[-1][1][:3], led(0, 255, 0))
+        self.assertFlashClean(r)
+
+
+def as_stock_page():
+    """An erased settings page with OpenShift's own settings (halfwords
+    0x50..0x56) set to logo on, stock's yellow and full gains.
+    Stock never touches those halfwords, so both images then drive the LEDs
+    the same way."""
+    page = bytearray(b'\xff' * 2048)
+    for i, v in enumerate((0xA501, 255, 255, 0, 255, 255, 255)):
+        page[2 * (0x50 + i):2 * (0x50 + i) + 2] = v.to_bytes(2, 'little')
+    return bytes(page)
+
+
+def as_stock_descriptor(d):
+    """OpenShift's report descriptor has 12 buttons where stock has 11."""
+    assert d.count(b'\x29\x0c') == 1, d.hex()
+    return d.replace(b'\x29\x0c', b'\x29\x0b')
+
+
+def seq_leds(frames):
+    """Stock frames as OpenShift shows them in sequential mode: handbrake LED off."""
+    return [bytes(3) + f[3:] if any(f) else f for f in frames]
+
+
+class StockView(Rig):
+    """OpenShift with the report 0x24 bytes stock leaves at 0 (23: options;
+    24, 53, 54: white balance) checked and then cleared."""
+
+    def last(self, report_id):
+        r = super().last(report_id)
+        if report_id == 0x24 and r is not None:
+            assert r[23] & 0x80 and (r[24], r[53], r[54]) == (255, 255, 255), r.hex()
+            r = bytearray(r)
+            r[23] = r[24] = r[53] = r[54] = 0
+            r = bytes(r)
+        return r
 
 
 @unittest.skipIf(stock_image() is None, 'stock firmware image not available')
 class MatchesStock(EmulatedCase):
-    """Same inputs to both images; everything the host sees must be equal."""
+    """Same inputs to both images; everything the host sees must be equal,
+    except for the intentional differences listed in docs/testing.md."""
 
     def both(self, scenario):
-        return scenario(stock_image()), scenario(openshift_image())
+        def rig(img):
+            cls = Rig if img is stock else StockView
+
+            def make(image, settings=None, **kw):
+                return cls(image, as_stock_page() if settings is None else settings, **kw)
+            return make
+        stock, ours = stock_image(), openshift_image()
+        return scenario(stock, rig(stock)), scenario(ours, rig(ours))
 
     def test_descriptors(self):
-        def sc(img):
+        def sc(img, Rig):
             r = Rig(img).boot()
             d = dict(r.m.host.descriptors)
             d['strings'] = {k: v for k, v in d['strings'].items() if k != 4}
             d['config'] = d['config'][:6] + b'\0' + d['config'][7:]   # iConfiguration
+            if img != stock_image():
+                d['report'] = as_stock_descriptor(d['report'])
             return d, r.m.sensor.log[:8]
         a, b = self.both(sc)
         self.assertEqual(a, b)
@@ -182,9 +279,12 @@ class MatchesStock(EmulatedCase):
                 (0x00, 3, 1, 0, 0), (0x02, 1, 0, 0x81, 0), (0x00, 9, 0, 0, 0), (0x80, 8, 0, 0, 1),
                 (0x00, 9, 1, 0, 0), (0x00, 9, 2, 0, 0)]
 
-        def sc(img):
+        def sc(img, Rig):
             r = Rig(img).boot(50)
             out = [r.control(*q) for q in reqs]
+            if img != stock_image():
+                out[reqs.index((0x81, 6, 0x2200, 0, 64))] = as_stock_descriptor(
+                    out[reqs.index((0x81, 6, 0x2200, 0, 64))])
             # Accepted by both; only OpenShift acts on it (test_set_report_runs_commands).
             out.append(r.control(0x21, 0x09, 0x0224, 0, 9, bytes([0x24, 0x20, 0, 0, 0, 0, 0x44, 0x55, 0x66])))
             return out
@@ -197,7 +297,7 @@ class MatchesStock(EmulatedCase):
                  (-100, -2100, 150), (-1600, 1800, 160), (-1700, -1600, 160), (-900, 400, 130),
                  (-1000, -400, 130), (0, 0, 212), (1400, 1500, 170), (1500, 1700, 160), (30, -40, 209)]
 
-        def sc(img):
+        def sc(img, Rig):
             r = Rig(img, pos=(0, 0, 210)).boot(200)
             out = []
             for x, y, z in steps:
@@ -210,7 +310,7 @@ class MatchesStock(EmulatedCase):
         self.assertEqual(pa, pb)
 
     def test_calibration_gears_modes_and_controls(self):
-        def sc(img):
+        def sc(img, Rig):
             log = []
             r = Rig(img, h_pattern=True).boot()
             snap = lambda tag: log.append((tag,) + r.state())  # noqa: E731
@@ -262,10 +362,12 @@ class MatchesStock(EmulatedCase):
             self.assertEqual(x, y, x[0])
         self.assertEqual(a[1], b[1], 'settings after calibration')
         self.assertEqual(a[2], b[2], 'settings at the end')
-        self.assertEqual(a[3], b[3], 'LED frames')
+        # Ends in sequential mode; LED frame timing differs, so only the
+        # final colours are compared.
+        self.assertEqual(seq_leds(a[3][-1:]), b[3][-1:], 'LED frames')
 
     def test_power_up_in_gear(self):
-        def sc(img):
+        def sc(img, Rig):
             r = Rig(img, h_pattern=True).boot()
             calibrate(r, hb_first=False)
             r = Rig(img, r.settings_page(), h_pattern=True, pos=(2106, 2310, 0x80)).boot(400)
@@ -280,7 +382,7 @@ class MatchesStock(EmulatedCase):
         self.assertEqual([s[0][1] for s in a], [0, 0, 1])
 
     def test_uart_stream_without_usb_host(self):
-        def sc(img):
+        def sc(img, Rig):
             r = Rig(img, enumerate=False)
             r.run(1500)
             return [p for _, p in r.m.uart_packets[:200]]
@@ -289,7 +391,7 @@ class MatchesStock(EmulatedCase):
         self.assertEqual(a, b)
 
     def test_suspend_and_resume(self):
-        def sc(img):
+        def sc(img, Rig):
             r = Rig(img).boot(300)
             n = len(r.m.led_frames)
             r.suspend(1500)
@@ -299,7 +401,7 @@ class MatchesStock(EmulatedCase):
             r.resume(3000)
             return off, asleep, [f for _, f in r.m.led_frames[n:]], r.m.sensor.powered, r.state()
         a, b = self.both(sc)
-        self.assertEqual(a, b)
+        self.assertEqual(a[:2] + (seq_leds(a[2]),) + a[3:], b)
         self.assertEqual(a[0], [bytes(9)], 'LEDs off while suspended')
 
 

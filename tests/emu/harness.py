@@ -127,4 +127,4 @@ class Rig:
 
     def reboot(self, **kw):
         """Power-cycle with the flash contents this unit has written."""
-        return Rig(self.image, self.settings_page(), **kw)
+        return type(self)(self.image, self.settings_page(), **kw)

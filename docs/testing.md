@@ -37,15 +37,16 @@ OpenShift's own settings start differently from stock (logo off, a warm
 colour), so these tests give both images a settings page with logo on, gamma
 off, stock's yellow and full gains in halfwords 0x50–0x56, which stock
 ignores. The remaining differences are checked explicitly, not skipped: report
-0x24 bytes 23, 24, 53 and 54 are cleared after they are checked, the report descriptor's button count is compared
-as 11, and LED frames in sequential mode are compared with the handbrake LED
+0x24 bytes 23, 24, 53 and 54 are cleared after they are checked, OpenShift's
+report descriptor (and its length in the HID descriptor) is checked against
+the expected one and then replaced with stock's, and LED frames in sequential mode are compared with the handbrake LED
 off.
 
 ## What matches stock exactly
 
 | Area | Covered by |
 |---|---|
-| Device, configuration, HID and report descriptors; strings (except iConfiguration, see below) | `MatchesStock.test_descriptors` |
+| Device, configuration and HID descriptors (except the report descriptor length); strings (except iConfiguration, see below) | `MatchesStock.test_descriptors` |
 | Sensor initialisation (the SPI command sequence) | `MatchesStock.test_descriptors` |
 | Answers to 22 standard and class requests: GET_STATUS, GET/SET_CONFIGURATION, GET/SET_INTERFACE, SET_IDLE (stalls), GET/SET_PROTOCOL, string/qualifier/HID/report descriptors, unknown vendor requests, SET/CLEAR_FEATURE | `MatchesStock.test_standard_and_class_requests` |
 | Gear learning on an uncalibrated unit, 14 poses, with the settings page compared afterwards | `MatchesStock.test_learning_on_an_uncalibrated_unit` |
@@ -103,7 +104,7 @@ None of these tests may write flash outside the FPEC rules. The emulator records
 | Handbrake button (B) | only cycles sequential / handbrake; nothing in H | in H, a HID button (report 1 bit 3, button 12); in SEQ as stock |
 | Handbrake button LED | lit in every mode; green in handbrake mode | the set colour in H, off in sequential mode, green in handbrake mode |
 | High/low button (A) | a button | a button, or a latching toggle (`24 32 1`) with a red/green LED |
-| Report descriptor | 11 buttons | 12 buttons |
+| Report descriptor | 11 buttons in nested application collections without a usage; Linux maps them to `BTN_0`.. and udev does not tag a joystick | one Joystick collection with 12 buttons, padding, Z and report 0x24 on vendor page `0xFF00` (`OpenShift.test_report_descriptor`); not yet checked on a real host |
 | Report 0x24 bytes 23, 24, 53, 54 | 0 | OpenShift options and white balance |
 | Settings halfwords 0x50–0x56 | unused | OpenShift options, colour and white balance |
 
@@ -133,6 +134,13 @@ Some timings differ by a few tens of milliseconds, all measured in the emulator:
   [protocol.md](protocol.md#what-is-not-known).
 - **The stall watchdog.** The emulator cannot easily hang the main loop.
   The code path is the same `enter_bootloader()` that the fault test uses.
+- **The web tool on hardware.** `web/src/lib/lib.test.ts` runs the browser
+  updater against a simulated bootloader (`web/src/lib/sim.ts`) that checks
+  the erase wait and the gap between pieces. The cases include an interrupted
+  write, a cancelled permission prompt and a bootloader whose report
+  descriptor has no output report. The real bootloader's report descriptor has
+  never been captured, so how WebHID sees it is unknown; the page checks it and
+  refuses before erasing if it cannot send report 0x24.
 
 ## Running
 
@@ -141,4 +149,11 @@ pip install -r requirements-dev.txt          # unicorn 2.1.4
 make -C firmware                              # builds build/openshift.bin
 make -C firmware test                         # all suites (about 4 minutes)
 python3 -m unittest discover -s tests -p test_flasher.py -v   # just one suite
+```
+
+The web tool has its own tests (Vitest), which also check the image in
+`firmware/build/`:
+
+```sh
+cd web && npm ci && npm test
 ```

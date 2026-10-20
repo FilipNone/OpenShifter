@@ -27,7 +27,7 @@ Settings page, as 16-bit halfwords:
 | 0x29 | auxiliary flag |
 | 0x2a–0x36 | 13 auxiliary bytes (`24 23`) |
 | 0x37–0x3e | per-gear match radius |
-| 0x3f, 0x40 | sequential up / down thresholds |
+| 0x3f, 0x40 | sequential thresholds in y: lever pushed forward (positive), pulled back (negative) |
 | 0x50 | OpenShift options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on |
 | 0x51–0x53 | OpenShift LED colour R, G, B |
 | 0x54–0x56 | OpenShift white balance gains R, G, B |
@@ -83,13 +83,28 @@ The device descriptor:
 
 There is one HID interface, with EP1 IN and EP1 OUT, both interrupt and 64 bytes.
 
+The report descriptor differs. Stock's describes the reports below with four
+application collections nested in the Joystick collection, none with a usage;
+16 bits of buttons for 11 button usages; and report 0x24 as usage 0x01 of the
+Generic Desktop page. On Linux that gives buttons `BTN_0` and up instead of
+`BTN_TRIGGER` and up, no `ID_INPUT_JOYSTICK` tag from udev, and a `REL_MISC`
+axis for report 0x24. OpenShift 0.4.0 and newer send one Joystick
+application collection: buttons 1 to 12 and 4 constant padding bits, the
+16-bit Z axis, and report 0x24 in and out on vendor page `0xFF00`, which
+Linux's HID input driver ignores. The top-level usage (Generic Desktop,
+Joystick) and the input and output report IDs and sizes are the same as
+stock's. OpenShift 0.4.0 and newer add feature report 0x25 (below).
+
 Input reports, sent every 2 ms:
 
 - **ID 1, 5 bytes:** `01 gears buttons hb_lo hb_hi`.
   - `gears`: bit n is gear n+1 in H-pattern mode.
-  - `buttons`: bit 0 is sequential down, bit 1 sequential up, bit 2 button A
-    (high/low). OpenShift adds bit 3, the handbrake button (B) while the
-    switch is in H; its report descriptor declares 12 buttons instead of 11.
+  - `buttons`: bit 0 is set with the lever pulled back in sequential mode,
+    bit 1 with it pushed forward, bit 2 is button A (high/low). Pulling back
+    shifts up, so bit 0 is shift up and bit 1 shift down; the firmware
+    sources call them `seq_down` and `seq_up` the other way round.
+    OpenShift adds bit 3, the handbrake button (B) while the switch is in
+    H; its report descriptor declares 12 buttons instead of 11.
     With high/low set to toggle, bit 2 is the latched state.
   - `hb_lo`, `hb_hi`: the 16-bit handbrake axis.
 - **ID 0x24, 64 bytes, status:**
@@ -105,7 +120,7 @@ Input reports, sent every 2 ms:
   | 18 | flags: A, B, H/SEQ switch, handbrake mode, seq down, seq up |
   | 23 | OpenShift only (stock sends 0): bit 7 set, bit 0 logo LED on, bit 1 high/low is a toggle, bit 2 toggle is on, bit 3 gamma on |
   | 24, 53, 54 | OpenShift 0.3.0 and newer (stock sends 0): white balance gains R, G, B |
-  | 48 | r / 8 |
+  | 48 | r / 8: the field strength at the sensor. With x and y it gives the lever's tilt, atan2(√(x² + y²) / 6.55, √(r² − (x² + y²) / 6.55²)) |
   | 59–62 | handbrake rest / pulled x |
   | 63 | mode |
 
@@ -132,6 +147,12 @@ OpenShift adds these (stock ignores them):
 | `24 3F n` | light only LED n of the chain (0–2) in white, to find which LED is which; `24 3F FF` ends it. Not saved |
 
 `tools/openshift_ctl.py` sends all of these.
+
+Feature report ID 0x25, 16 bytes, OpenShift 0.4.0 and newer: `25` followed by
+the version string, for example `0.4.0`, padded with NULs. It is read with
+GET_REPORT (feature). Browsers cannot read the iConfiguration string, so the
+web tool uses this report to tell OpenShift versions apart. Stock firmware and
+older OpenShift versions do not declare it.
 
 LEDs in OpenShift:
 

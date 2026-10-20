@@ -1,0 +1,52 @@
+@import "tailwindcss";
+@import "@fontsource-variable/inter";
+
+/* The accent is the shifter's LED colour, set at runtime by applyAccent().
+   --led fills surfaces as is; --led-text and --led-edge are derived tones
+   that keep text at 4.5:1 and control edges at 3:1 on each canvas. */
+:root {
+  --led: #ffb64e;
+  --led-ink: #09090b;
+  --led-text-light: #8c5a00;
+  --led-text-dark: #ffb64e;
+  --led-edge-light: #b07a1c;
+  --led-edge-dark: #ffb64e;
+  --led-text: var(--led-text-light);
+  --led-edge: var(--led-edge-light);
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --led-text: var(--led-text-dark);
+    --led-edge: var(--led-edge-dark);
+  }
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --color-led: var(--led);
+  --color-led-ink: var(--led-ink);
+  --color-led-text: var(--led-text);
+  --color-led-edge: var(--led-edge);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-zinc-50 font-sans text-zinc-950 antialiased dark:bg-zinc-900 dark:text-white;
+    font-feature-settings: "cv11", "ss01";
+  }
+  code, kbd, pre {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

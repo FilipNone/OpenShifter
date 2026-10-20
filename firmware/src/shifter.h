@@ -134,6 +134,7 @@ typedef struct {
     uint8_t  gain[3];        /* white balance per channel, 255 = full */
     uint8_t  range_on;       /* high/low latch state in toggle mode */
     uint8_t  hb_button;      /* handbrake button as a HID button (H-pattern only) */
+    uint8_t  gear_gap;       /* samples left of the neutral between two gears */
     uint8_t  led_test;       /* chain position lit white by 24 3F, 0xFF = off */
     uint8_t  booting;        /* 24 00 received: all LEDs yellow */
 } shifter_t;

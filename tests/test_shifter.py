@@ -239,6 +239,24 @@ class Core(CoreHelpers, unittest.TestCase):
             self.feed(t, 0, 0)
             self.assertEqual(self.report1(t)[1], 0, f'neutral after gear {k}')
 
+        # Through neutral faster than the debounce: gear 3 straight to gear
+        # 2 reports neutral for 5 samples in between, so hosts see gear 3
+        # released before gear 2 is pressed.
+        (x3, y3, z3), (x2, y2, z2) = GEARS[2], GEARS[1]
+        self.feed(t, x3, y3, z3)
+        seen = []
+        for _ in range(40):
+            lib.shifter_sensor_frame(t, frame(x2, y2, z2))
+            seen.append(self.report1(t)[1])
+        self.assertEqual(seen, [0b100] * 20 + [0] * 5 + [0b10] * 15)
+        # Through neutral at a normal pace: no extra gap.
+        self.feed(t, 0, 0)
+        seen = []
+        for _ in range(25):
+            lib.shifter_sensor_frame(t, frame(x3, y3, z3))
+            seen.append(self.report1(t)[1])
+        self.assertEqual(seen, [0] * 20 + [0b100] * 5)
+
 
 DEFAULT_GAINS = (255, 162, 96)
 

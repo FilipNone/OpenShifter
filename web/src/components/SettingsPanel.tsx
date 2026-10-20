@@ -362,7 +362,7 @@ function OpenShiftSettings({ session, status, balance, neutral, onPinAccent }:
         {neutral ? (
           <div className="border-t border-zinc-950/5 dark:border-white/10">
             <SwitchRow title="Press a button in neutral"
-              description="With the switch in H, the first button (0 on Linux, 1 on Windows) is held while no gear is engaged. Bind it to Neutral in the game."
+              description="With the switch in H, the neutral button is held while no gear is engaged."
               checked={neutralButton.value} onChange={neutralButton.set} state={neutralButton.state} />
           </div>
         ) : (

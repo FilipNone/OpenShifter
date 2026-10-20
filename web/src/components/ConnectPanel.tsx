@@ -83,6 +83,8 @@ export function ConnectPanel({ supported, busy, error, onConnect, demoHref }: {
             <Notice tone="warning" title="This browser cannot reach USB devices">
               <p>The page uses WebHID, which Chrome, Edge and Opera have on Windows, macOS, Linux and ChromeOS.
                 Firefox and Safari do not have it. Open this page in one of those browsers on a computer.</p>
+              <p>Firefox can get it from a third-party add-on.{' '}
+                <a href="https://github.com/FilipNone/OpenShifter/wiki/Firefox" className={cx('rounded font-semibold underline underline-offset-4', focusRing)}>How to set it up</a></p>
             </Notice>
             <a href={demoHref} className="inline-block text-sm/6 font-semibold text-led-text underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-led-edge">
               Try the demo with a simulated shifter

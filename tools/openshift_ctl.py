@@ -413,7 +413,7 @@ def main(argv=None, bus=None, inp=None, out=None, opener=open_hidraw):
     sub.add_parser('status', help='show the settings, mode, lever and calibration')
     s = sub.add_parser('logo', help='turn the logo LED on or off')
     s.add_argument('state', choices=['on', 'off'])
-    s = sub.add_parser('color', help='set the LED colour: R G B, #RRGGBB or default (warm white)')
+    s = sub.add_parser('color', help='set the LED colour: R G B, #RRGGBB or default (warm orange)')
     s.add_argument('rgb', nargs='+')
     s = sub.add_parser('highlow', help='make the high/low button a button or a toggle')
     s.add_argument('behaviour', choices=['button', 'toggle'])

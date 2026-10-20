@@ -99,7 +99,8 @@ class OpenShift(EmulatedCase):
 
         data = [f for f in fields if not f['const']]
         buttons = [u for f in data for u in f['usages'] if u >> 16 == 0x09]
-        self.assertEqual(buttons, [0x00090000 | n for n in range(1, 13)], 'one usage per button bit')
+        # Report bits 0 to 11 are buttons 2 to 13; button 1 is reserved.
+        self.assertEqual(buttons, [0x00090000 | n for n in [*range(2, 14), 1]], 'one usage per button bit')
         for f in data:
             self.assertEqual(f['application'], 0x00010004)
             if f['report'] in (0x24, 0x25):
@@ -230,7 +231,7 @@ class OpenShift(EmulatedCase):
         r = r.reboot(h_pattern=True).boot()
         self.assertEqual(r.m.led_frames[-1][1], blue + blue + red)
         self.assertEqual(r.last(0x24)[6:9], bytes([30, 60, 90]))
-        # High/low latches; the handbrake button is button 12 in H.
+        # High/low latches; the handbrake button is button 13 in H.
         r.press('PA4', ms=100)
         r.press('PA4', hold=False, ms=100)
         self.assertEqual(r.last(0x01)[2], 0x04)
@@ -262,7 +263,7 @@ def as_stock_page():
 
 
 OPENSHIFT_REPORT_DESCRIPTOR = bytes.fromhex(
-    '05010904a1018501 0509 1901290c 15002501 7501950c 8102 9504 8103'
+    '05010904a1018501 0509 1902290d 15002501 7501950c 8102 0901 9501 8102 9503 8103'
     '0501 0932 150027ffff0000 350047ffff0000 75109501 8102'
     '8524 0600ff 0901 150026ff00 7508953f 8102 0901 9102'
     '8525 0902 950f b102 c0')

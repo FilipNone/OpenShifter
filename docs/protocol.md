@@ -7,13 +7,15 @@ Sources:
 
 Hardware: an AIR32F103 (STM32F103-compatible Cortex-M3) with an MLX90393 magnetic sensor, RGB LEDs and USB full speed.
 
+Button A is the High/low button and button B the Handbrake button.
+
 ## Flash map
 
 | Address | Contents |
 |---|---|
-| `0x08000000–0x0800EFFF` | vendor bootloader (USB `10f5:7097`), never written by updates |
+| `0x08000000` to `0x0800EFFF` | vendor bootloader (USB `10f5:7097`), never written by updates |
 | `0x0800F000` | settings page, shared with the bootloader |
-| `0x08010000–0x0801FFFF` | application, raw vector table first, no header or checksum |
+| `0x08010000` to `0x0801FFFF` | application, raw vector table first, no header or checksum |
 
 Settings page, as 16-bit halfwords:
 
@@ -25,22 +27,22 @@ Settings page, as 16-bit halfwords:
 | 7 + 4k, 8 + 4k | calibrated x, y of gear k+1 (k = 0..7) |
 | 0x27, 0x28 | handbrake rest / pulled x |
 | 0x29 | auxiliary flag |
-| 0x2a–0x36 | 13 auxiliary bytes (`24 23`) |
-| 0x37–0x3e | per-gear match radius |
+| 0x2a to 0x36 | 13 auxiliary bytes (`24 23`) |
+| 0x37 to 0x3e | per-gear match radius |
 | 0x3f, 0x40 | sequential thresholds in y: lever pushed forward (positive), pulled back (negative) |
 | 0x50 | OpenShift options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on |
-| 0x51–0x53 | OpenShift LED colour R, G, B |
-| 0x54–0x56 | OpenShift white balance gains R, G, B |
+| 0x51 to 0x53 | OpenShift LED colour R, G, B |
+| 0x54 to 0x56 | OpenShift white balance gains R, G, B |
 | 0x63 | `0x1254` once calibration is complete |
 
-Stock never reads or writes halfwords 0x41–0x62. OpenShift uses 0x50–0x56.
+Stock never reads or writes halfwords 0x41 to 0x62. OpenShift uses 0x50 to 0x56.
 Without the `0xA5` marker in halfword 0x50 they mean the defaults: logo off,
 high/low as a button, colour 255 182 78 (warm orange), gamma off, gains
 255 162 96. The marker is there
 because the page can come back from an update as zeros, not only as `0xFFFF`:
 OpenShift 0.2.0 read a zeroed page as colour 0 0 0, which turned every LED off.
 
-Stock assumes 2 KB flash pages and rewrites halfwords 0–0x3ff. OpenShift preserves everything outside halfwords 0–99.
+Stock assumes 2 KB flash pages and rewrites halfwords 0 to 0x3ff. OpenShift preserves everything outside halfwords 0 to 99.
 
 ## Update protocol (bootloader)
 
@@ -89,11 +91,17 @@ application collections nested in the Joystick collection, none with a usage;
 Generic Desktop page. On Linux that gives buttons `BTN_0` and up instead of
 `BTN_TRIGGER` and up, no `ID_INPUT_JOYSTICK` tag from udev, and a `REL_MISC`
 axis for report 0x24. OpenShift 0.4.0 and newer send one Joystick
-application collection: buttons 1 to 12 and 4 constant padding bits, the
+application collection: 12 buttons and 4 constant padding bits, the
 16-bit Z axis, and report 0x24 in and out on vendor page `0xFF00`, which
 Linux's HID input driver ignores. The top-level usage (Generic Desktop,
 Joystick) and the input and output report IDs and sizes are the same as
 stock's. OpenShift 0.4.0 and newer add feature report 0x25 (below).
+
+In 0.4.0 the 12 button bits are buttons 1 to 12. From 0.4.1 they are buttons
+2 to 13, and the next bit (`buttons` bit 4) is button 1, reserved and always
+0, followed by 3 padding bits. Linux numbers buttons from 0, so gear 1 is
+button 1 there; Windows numbers from 1, so gear 1 is button 2. The report
+bytes did not change.
 
 Input reports, sent every 2 ms:
 
@@ -104,7 +112,8 @@ Input reports, sent every 2 ms:
     shifts up, so bit 0 is shift up and bit 1 shift down; the firmware
     sources call them `seq_down` and `seq_up` the other way round.
     OpenShift adds bit 3, the handbrake button (B) while the switch is in
-    H; its report descriptor declares 12 buttons instead of 11.
+    H; its report descriptor declares more buttons than stock's 11 (see
+    above). Bits 4 to 7 are always 0.
     With high/low set to toggle, bit 2 is the latched state.
   - `hb_lo`, `hb_hi`: the 16-bit handbrake axis.
 - **ID 0x24, 64 bytes, status:**
@@ -112,16 +121,16 @@ Input reports, sent every 2 ms:
   | Byte(s) | Contents |
   |---|---|
   | 1 | `0x20` |
-  | 2–3, 4–5 | x, y, big-endian |
-  | 6–8 | LED RGB |
-  | 9–12 | handbrake rest / pulled y |
+  | 2 to 3, 4 to 5 | x, y, big-endian |
+  | 6 to 8 | LED RGB |
+  | 9 to 12 | handbrake rest / pulled y |
   | 13 + 6k | gear k+1 x, y, big-endian |
   | 17, 29, 30, 35, 36, 41, 42, 47 | per-gear radius / 8 |
-  | 18 | flags: A, B, H/SEQ switch, handbrake mode, seq down, seq up |
+  | 18 | flags: bit 0 button A, 1 button B, 2 switch in H, 3 handbrake mode, 4 lever pulled back, 5 lever pushed forward (the last two are `seq_down` and `seq_up` in the source) |
   | 23 | OpenShift only (stock sends 0): bit 7 set, bit 0 logo LED on, bit 1 high/low is a toggle, bit 2 toggle is on, bit 3 gamma on |
   | 24, 53, 54 | OpenShift 0.3.0 and newer (stock sends 0): white balance gains R, G, B |
   | 48 | r / 8: the field strength at the sensor. With x and y it gives the lever's tilt, atan2(√(x² + y²) / 6.55, √(r² − (x² + y²) / 6.55²)) |
-  | 59–62 | handbrake rest / pulled x |
+  | 59 to 62 | handbrake rest / pulled x |
   | 63 | mode |
 
 Output report ID 0x24 (64 bytes) commands:
@@ -130,7 +139,7 @@ Output report ID 0x24 (64 bytes) commands:
 |---|---|
 | `24 00` | enter the bootloader (LEDs turn yellow first) |
 | `24 20 _ _ _ _ R G B` | LED colour, not saved |
-| `24 21 n` | calibrate target n: 1–8 gears, 9 handbrake rest / neutral, 10 handbrake pulled; saved |
+| `24 21 n` | calibrate target n: 1 to 8 gears, 9 handbrake rest / neutral, 10 handbrake pulled; saved |
 | `24 22` | cycle mode (as button B); saved |
 | `24 23 b0…b12` | 13 auxiliary bytes; saved |
 | `24 24 g v` | per-gear radius byte for gear g = 1..8: shown in report 0x24 only, not stored (stock behaviour) |
@@ -144,7 +153,7 @@ OpenShift adds these (stock ignores them):
 | `24 32 v` | high/low button: 0 a plain button, 1 a toggle (starts off at power-up); saved |
 | `24 33 R G B s` | white balance: a gain per channel, 255 = full; saved when s is 1, live only when 0 |
 | `24 34 v` | gamma correction: 1 on, 0 off (default); saved |
-| `24 3F n` | light only LED n of the chain (0–2) in white, to find which LED is which; `24 3F FF` ends it. Not saved |
+| `24 3F n` | light only LED n of the chain (0 to 2) in white, to find which LED is which; `24 3F FF` ends it. Not saved |
 
 `tools/openshift_ctl.py` sends all of these.
 

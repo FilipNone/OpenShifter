@@ -102,6 +102,7 @@ None of these tests may write flash outside the FPEC rules. The emulator records
 | LED output | colour × 2/3 | optional gamma 2.2 (`24 34 1`, off by default) and a white balance gain per channel, then × 2/3; gamma off and gains of 255 give stock's output |
 | Logo LED | always lit | off unless turned on (`24 31 1`) |
 | Handbrake button (B) | only cycles sequential / handbrake; nothing in H | in H, a HID button (report 1 bit 3, button 13); in SEQ as stock |
+| Gear to gear faster than the 40 ms debounce | report 1 goes from the old gear bit straight to the new one | 10 ms of neutral (`gears` 0) in between, so Linux does not send the new gear's press before the old gear's release on a downshift (`Core.test_calibration_round_trip_and_gears`) |
 | Handbrake button LED | lit in every mode; green in handbrake mode | the set colour in H, off in sequential mode, green in handbrake mode |
 | High/low button (A) | a button | a button, or a latching toggle (`24 32 1`) with a red/green LED |
 | Report descriptor | 11 buttons in nested application collections without a usage; Linux maps them to `BTN_0`.. and udev does not tag a joystick | one Joystick collection with the 12 report bits as buttons 2 to 13, button 1 for the optional neutral button (`24 35 1`), padding, Z and report 0x24 on vendor page `0xFF00` (`OpenShift.test_report_descriptor`); not yet checked on a real host |

@@ -425,6 +425,10 @@ static int debounce(shifter_t *s)
     return s->deb_count >= s->deb_limit;
 }
 
+/* Neutral between two gears, in 2 ms samples: long enough for the host to
+ * get it in a report of its own. */
+#define SH_GEAR_GAP 5
+
 static void release(shifter_t *s)
 {
     s->latched = 0;
@@ -476,8 +480,21 @@ static void decide_hpattern(shifter_t *s)
             in_box(s->y, s->match_y[7], 99) && s->cand == 7)
             release(s);
     }
-    if (debounce(s) && s->cand <= 8)
-        s->gears = s->cand ? (uint8_t)(1u << (s->cand - 1)) : 0;
+    if (debounce(s) && s->cand <= 8) {
+        uint8_t g = s->cand ? (uint8_t)(1u << (s->cand - 1)) : 0;
+        /* A lever moved through neutral faster than the debounce goes from
+         * one gear straight to the next. Report neutral in between, so that
+         * hosts see the old gear released before the new one is pressed:
+         * Linux sends the changes in a report in button order, and a game
+         * that selects neutral on release would end a downshift there. */
+        if (s->gears && g && g != s->gears)
+            s->gear_gap = SH_GEAR_GAP;
+        if (s->gear_gap) {
+            s->gear_gap--;
+            g = 0;
+        }
+        s->gears = g;
+    }
 }
 
 static void decide_sequential(shifter_t *s)

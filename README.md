@@ -30,7 +30,8 @@ Step by step: [Install](https://github.com/FilipNone/OpenShifter/wiki/Install) Â
 
 Firefox cannot reach USB devices by itself. The third-party add-on [WebHID for Firefox](https://github.com/Sainan/WebHID-for-Firefox) adds this, with a helper program that runs on your computer. Setup: [Firefox](https://github.com/FilipNone/OpenShifter/wiki/Firefox).
 
-- It is not tested with OpenShift. Install firmware with a Chromium based browser.
+- Use it for settings and calibration only. Firmware updates do not work in Firefox: install firmware with Chrome, Edge or Opera.
+- Changing a setting shows an error in Firefox. This is normal and the setting still changes.
 - On Linux and macOS, any website can use the helper while it runs. Start it only while you use the web tool.
 
 </details>
@@ -42,6 +43,10 @@ make -C firmware          # firmware/build/openshift.bin (needs clang and lld 15
 make -C firmware test     # all tests (pip install -r requirements-dev.txt first)
 cd web && npm ci && npm run dev   # web tool on http://localhost:5173/
 ```
+
+The web tool offers the firmware file from the latest release, checked against
+the release's `SHA256SUMS`. To try a local build, choose **A file on this
+computer** and pick `firmware/build/openshift.bin`.
 
 | Folder | Contents |
 |---|---|

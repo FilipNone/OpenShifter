@@ -2,7 +2,7 @@ Installing OpenShift replaces the shifter's firmware. It **erases your calibrati
 
 ## Before you start
 
-- Use **Chrome, Edge or Opera** on a computer. Do not install firmware from Firefox, even with the [add-on](Firefox): that is untested.
+- Use **Chrome, Edge or Opera** on a computer. Firmware updates do not work in Firefox, even with the [add-on](Firefox).
 - Close **VelocityOne Tuner** if it is open.
 - **Linux only:** give the browser access to the shifter. Run this once, then unplug the shifter and plug it back in:
 

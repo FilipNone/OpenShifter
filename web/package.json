@@ -6,9 +6,10 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "firmware": "node scripts/copy-firmware.mjs",
-    "dev": "node scripts/copy-firmware.mjs --optional && vite",
-    "build": "npm run firmware && tsc --noEmit && vite build",
+    "firmware": "node scripts/release-firmware.mjs",
+    "dev": "node scripts/release-firmware.mjs --optional && vite",
+    "build": "npm run firmware && npm run build:site",
+    "build:site": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run"
   },

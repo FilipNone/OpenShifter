@@ -387,6 +387,8 @@ class UsbHost:
         self.descriptors = {}
         self.in_reports = []
         self.poll = True
+        self.miss = None        # frame number -> True to skip that frame's poll
+        self.frame_no = 0
         self.log = []
         self.auto_enumerate = True
 
@@ -413,7 +415,9 @@ class UsbHost:
             self.run_task(self.enumerate())
         if self.state != 'suspended':
             dev.sof()
-        if self.config and self.poll and self.state == 'configured' and not self.task:
+        self.frame_no += 1
+        missed = self.miss is not None and self.miss(self.frame_no)
+        if self.config and self.poll and self.state == 'configured' and not self.task and not missed:
             r = dev.in_token(self.addr, 1)
             if isinstance(r, bytes):
                 self.in_reports.append((self.m.time_us, r))

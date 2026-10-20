@@ -264,8 +264,15 @@ void shifter_init(shifter_t *s)
     s->seq_down_thr = -1800;
     s->match_y[2] = 1600;
     s->match_y[3] = -1600;
-    s->led_rgb[0] = 0xff;
-    s->led_rgb[1] = 0xff;
+    s->color[0] = SH_DEFAULT_R;
+    s->color[1] = SH_DEFAULT_G;
+    s->color[2] = SH_DEFAULT_B;
+    s->gain[0] = SH_DEFAULT_GAIN_R;
+    s->gain[1] = SH_DEFAULT_GAIN_G;
+    s->gain[2] = SH_DEFAULT_GAIN_B;
+    for (int i = 0; i < 3; i++)
+        s->led_rgb[i] = s->color[i];
+    s->led_test = 0xff;
     s->sw_prev = 99;
     s->a_thr = 1;
     s->b_thr = 1;
@@ -312,6 +319,18 @@ void shifter_load(shifter_t *s, const uint16_t st[SH_SETTINGS_HALFWORDS])
         for (int i = 0; i < 13; i++)
             s->aux13[i] = (uint8_t)st[0x2a + i];
     s->g1_left_of_g3 = s->gear_x[0] < s->gear_x[2];
+
+    if (st[SH_ST_FLAGS] >> 8 == SH_ST_MARK) {
+        s->options = (uint8_t)(st[SH_ST_FLAGS] & (SH_OPT_LOGO | SH_OPT_RANGE_TOGGLE | SH_OPT_GAMMA));
+        if (st[SH_ST_COLOR] <= 0xff && st[SH_ST_COLOR + 1] <= 0xff && st[SH_ST_COLOR + 2] <= 0xff)
+            for (int i = 0; i < 3; i++)
+                s->color[i] = (uint8_t)st[SH_ST_COLOR + i];
+        if (st[SH_ST_GAIN] <= 0xff && st[SH_ST_GAIN + 1] <= 0xff && st[SH_ST_GAIN + 2] <= 0xff)
+            for (int i = 0; i < 3; i++)
+                s->gain[i] = (uint8_t)st[SH_ST_GAIN + i];
+    }
+    for (int i = 0; i < 3; i++)
+        s->led_rgb[i] = s->color[i];
 }
 
 void shifter_save(const shifter_t *s, uint16_t st[SH_SETTINGS_HALFWORDS])
@@ -334,6 +353,11 @@ void shifter_save(const shifter_t *s, uint16_t st[SH_SETTINGS_HALFWORDS])
     st[0x40] = (uint16_t)s->seq_down_thr;
     if (s->cal_bits == 0xff || s->settings_valid)
         st[0x63] = SH_SETTINGS_MAGIC;
+    st[SH_ST_FLAGS] = (uint16_t)(SH_ST_MARK << 8 | s->options);
+    for (int i = 0; i < 3; i++)
+        st[SH_ST_COLOR + i] = s->color[i];
+    for (int i = 0; i < 3; i++)
+        st[SH_ST_GAIN + i] = s->gain[i];
 }
 
 /* trunc(s12 * 6.55 * q30 / 2^30); nested truncating division is exact for
@@ -671,14 +695,28 @@ unsigned shifter_buttons(shifter_t *s, int pb10_low, int pa5_low, int pa4_low)
     }
     s->sw_h = sw;
 
-    if (s->btn_b && b) {
-        s->b_count++;
-    } else {
-        if (s->b_count >= s->b_thr)
-            act |= mode_cycle(s);
+    /* Handbrake button: a plain HID button with the switch in H, the
+     * sequential/handbrake toggle (stock behaviour) with it in SEQ. */
+    if (sw) {
+        s->hb_button = b;
         s->b_count = 0;
+    } else {
+        s->hb_button = 0;
+        if (s->btn_b && b) {
+            s->b_count++;
+        } else {
+            if (s->b_count >= s->b_thr)
+                act |= mode_cycle(s);
+            s->b_count = 0;
+        }
     }
     s->btn_b = b;
+
+    /* High/low button in toggle mode: each press flips the latch. */
+    if ((s->options & SH_OPT_RANGE_TOGGLE) && a && !s->a_prev) {
+        s->range_on = !s->range_on;
+        act |= SH_ACT_LED;
+    }
 
     if (s->a_prev && a) {
         s->a_count++;
@@ -748,9 +786,7 @@ unsigned shifter_command(shifter_t *s, const uint8_t *buf, unsigned len)
 
     switch (b[1]) {
     case 0x00:  /* enter bootloader */
-        s->led_rgb[0] = 0xff;
-        s->led_rgb[1] = 0xff;
-        s->led_rgb[2] = 0;
+        s->booting = 1;
         return SH_ACT_SAVE | SH_ACT_BOOT;
     case 0x20:  /* LED colour, not persisted */
         for (int i = 0; i < 3; i++)
@@ -771,6 +807,38 @@ unsigned shifter_command(shifter_t *s, const uint8_t *buf, unsigned len)
         if (b[2] >= 1 && b[2] <= 8)
             s->cfg[b[2] - 1] = b[3];
         return SH_ACT_SAVE;
+    /* OpenShift commands */
+    case 0x30:  /* LED colour R G B, saved */
+        for (int i = 0; i < 3; i++)
+            s->color[i] = s->led_rgb[i] = b[2 + i];
+        return SH_ACT_LED | SH_ACT_SAVE;
+    case 0x31:  /* logo LED: 0 off, 1 on; saved */
+        if (b[2] > 1)
+            return 0;
+        s->options = (uint8_t)((s->options & ~SH_OPT_LOGO) | (b[2] ? SH_OPT_LOGO : 0));
+        return SH_ACT_LED | SH_ACT_SAVE;
+    case 0x32:  /* high/low button: 0 momentary, 1 toggle; saved */
+        if (b[2] > 1)
+            return 0;
+        s->options = (uint8_t)((s->options & ~SH_OPT_RANGE_TOGGLE) | (b[2] ? SH_OPT_RANGE_TOGGLE : 0));
+        s->range_on = 0;
+        return SH_ACT_LED | SH_ACT_SAVE;
+    case 0x33:  /* white balance gains R G B; saved when the next byte is 1 */
+        if (b[5] > 1)
+            return 0;
+        for (int i = 0; i < 3; i++)
+            s->gain[i] = b[2 + i];
+        return SH_ACT_LED | (b[5] ? SH_ACT_SAVE : 0);
+    case 0x34:  /* gamma correction: 1 on, 0 off (default); saved */
+        if (b[2] > 1)
+            return 0;
+        s->options = (uint8_t)((s->options & ~SH_OPT_GAMMA) | (b[2] ? SH_OPT_GAMMA : 0));
+        return SH_ACT_LED | SH_ACT_SAVE;
+    case 0x3f:  /* light only chain position 0..2 in white; 0xFF ends */
+        if (b[2] > 2 && b[2] != 0xff)
+            return 0;
+        s->led_test = b[2];
+        return SH_ACT_LED;
     default:
         return 0;
     }
@@ -780,7 +848,8 @@ void shifter_report1(const shifter_t *s, uint8_t out[5])
 {
     out[0] = 0x01;
     out[1] = s->gears;
-    out[2] = (uint8_t)(s->seq_down + 2 * s->seq_up + 4 * s->btn_a);
+    uint8_t range = (s->options & SH_OPT_RANGE_TOGGLE) ? s->range_on : s->btn_a;
+    out[2] = (uint8_t)(s->seq_down + 2 * s->seq_up + 4 * range + 8 * s->hb_button);
     out[3] = (uint8_t)(s->handbrake & 0xff);
     out[4] = (uint8_t)(s->handbrake >> 8);
 }
@@ -813,6 +882,11 @@ void shifter_report36(const shifter_t *s, uint8_t out[64])
     out[18] = (uint8_t)(s->btn_a | s->btn_b << 1 | s->sw_h << 2 | (s->mode == SH_MODE_HANDBRAKE) << 3 |
                         s->seq_down << 4 | s->seq_up << 5);
     out[48] = (uint8_t)(s->r >> 3);
+    /* OpenShift options; stock leaves this byte at 0. */
+    out[23] = (uint8_t)(0x80 | s->options | s->range_on << 2);
+    out[24] = s->gain[0];
+    out[53] = s->gain[1];
+    out[54] = s->gain[2];
     be16(&out[59], s->hb_x_rest);
     be16(&out[61], s->hb_x_pulled);
     out[63] = s->mode;
@@ -834,20 +908,73 @@ void shifter_uart_packet(const shifter_t *s, uint8_t out[16])
     out[15] = 0x11;
 }
 
+/* round(255 * (i / 255)^2.2), at least 1 for i > 0, for SH_OPT_GAMMA. Off
+ * by default: with it on, colours were hard to match by eye on these LEDs. */
+static const uint8_t gamma22[256] = {
+      0,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,   1,
+      1,   1,   1,   1,   1,   1,   1,   1,   1,   2,   2,   2,   2,   2,   2,   2,
+      3,   3,   3,   3,   3,   4,   4,   4,   4,   5,   5,   5,   5,   6,   6,   6,
+      6,   7,   7,   7,   8,   8,   8,   9,   9,   9,  10,  10,  11,  11,  11,  12,
+     12,  13,  13,  13,  14,  14,  15,  15,  16,  16,  17,  17,  18,  18,  19,  19,
+     20,  20,  21,  22,  22,  23,  23,  24,  25,  25,  26,  26,  27,  28,  28,  29,
+     30,  30,  31,  32,  33,  33,  34,  35,  35,  36,  37,  38,  39,  39,  40,  41,
+     42,  43,  43,  44,  45,  46,  47,  48,  49,  49,  50,  51,  52,  53,  54,  55,
+     56,  57,  58,  59,  60,  61,  62,  63,  64,  65,  66,  67,  68,  69,  70,  71,
+     73,  74,  75,  76,  77,  78,  79,  81,  82,  83,  84,  85,  87,  88,  89,  90,
+     91,  93,  94,  95,  97,  98,  99, 100, 102, 103, 105, 106, 107, 109, 110, 111,
+    113, 114, 116, 117, 119, 120, 121, 123, 124, 126, 127, 129, 130, 132, 133, 135,
+    137, 138, 140, 141, 143, 145, 146, 148, 149, 151, 153, 154, 156, 158, 159, 161,
+    163, 165, 166, 168, 170, 172, 173, 175, 177, 179, 181, 182, 184, 186, 188, 190,
+    192, 194, 196, 197, 199, 201, 203, 205, 207, 209, 211, 213, 215, 217, 219, 221,
+    223, 225, 227, 229, 231, 234, 236, 238, 240, 242, 244, 246, 248, 251, 253, 255,
+};
+
+/* One channel: gamma if it is on, then the white balance gain, then stock's
+ * brightness cap (stock divides each channel by 1.5f). */
+static uint8_t led_level(const shifter_t *s, unsigned c, unsigned v)
+{
+    if (s->options & SH_OPT_GAMMA)
+        v = gamma22[v & 0xff];
+    v = v * s->gain[c] / 255;
+    return (uint8_t)(v * 2 / 3);
+}
+
+static void led_put(const shifter_t *s, uint8_t out[9], unsigned i, unsigned r, unsigned g, unsigned b)
+{
+    out[3 * i + 0] = led_level(s, 1, g);
+    out[3 * i + 1] = led_level(s, 0, r);
+    out[3 * i + 2] = led_level(s, 2, b);
+}
+
 void shifter_led_grb(const shifter_t *s, int asleep, uint8_t out[9])
 {
-    for (int i = 0; i < 3; i++) {
-        uint16_t r = s->led_rgb[0], g = s->led_rgb[1], b = s->led_rgb[2];
-        if (asleep) {
-            r = g = b = 0;
-        } else if (i == 0 && s->mode == SH_MODE_HANDBRAKE) {
-            r = 0;
-            g = 0xff;
-            b = 0;
-        }
-        /* Stock divides each channel by 1.5f (brightness cap). */
-        out[3 * i + 0] = (uint8_t)(g * 2 / 3);
-        out[3 * i + 1] = (uint8_t)(r * 2 / 3);
-        out[3 * i + 2] = (uint8_t)(b * 2 / 3);
+    unsigned r = s->led_rgb[0], g = s->led_rgb[1], b = s->led_rgb[2];
+    for (int i = 0; i < 9; i++)
+        out[i] = 0;
+    if (asleep)
+        return;
+    if (s->booting) {
+        for (unsigned i = 0; i < 3; i++)
+            led_put(s, out, i, 0xff, 0xff, 0);
+        return;
     }
+    if (s->led_test < 3) {
+        led_put(s, out, s->led_test, 0xff, 0xff, 0xff);
+        return;
+    }
+    /* Handbrake button: the colour in H-pattern, off in sequential, green
+     * while handbrake mode is on. */
+    if (s->mode == SH_MODE_HANDBRAKE)
+        led_put(s, out, SH_LED_HANDBRAKE, 0, 0xff, 0);
+    else if (s->mode != SH_MODE_SEQUENTIAL)
+        led_put(s, out, SH_LED_HANDBRAKE, r, g, b);
+    /* High/low button: the colour as a button, green or red as a toggle. */
+    if (!(s->options & SH_OPT_RANGE_TOGGLE))
+        led_put(s, out, SH_LED_RANGE, r, g, b);
+    else if (s->range_on)
+        led_put(s, out, SH_LED_RANGE, 0, 0xff, 0);
+    else
+        led_put(s, out, SH_LED_RANGE, 0xff, 0, 0);
+    if (s->options & SH_OPT_LOGO)
+        led_put(s, out, SH_LED_LOGO, r, g, b);
 }

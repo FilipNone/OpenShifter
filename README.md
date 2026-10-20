@@ -9,18 +9,33 @@ needed and the stock firmware can always be put back.
 
 OpenShift runs on the same AIR32F103 board as stock firmware TBRS004-20241224
 and started from its behaviour. Later versions will change and improve on it.
-Version 0.1.0 keeps:
+Version 0.3.2 keeps:
 
-- the same USB device: descriptors, HID reports, report 0x24 status, LEDs and UART stream
+- the same USB device: descriptors, HID reports, report 0x24 status and UART stream
 - H-pattern gears 1–8, sequential up/down and analog handbrake mode
-- the A/B buttons, the H/SEQ switch and the RGB LEDs
+- the H/SEQ switch
 - calibration from VelocityOne Tuner (`24 21 n`), stored in the same settings
   page format, so a calibration made with stock firmware carries over
 - gear learning on an uncalibrated unit, using the stock algorithm
 - the `24 00` command, which hands over to the vendor bootloader, so Tuner and
   this flasher can update it
 
-It adds things stock doesn't have. A [full list of differences](docs/testing.md#intentional-differences) is in the testing doc.
+It changes the buttons and LEDs. All settings are saved on the shifter and set
+with `tools/openshift_ctl.py` (see [Settings and calibration](#settings-and-calibration)):
+
+- **Logo LED** off by default; it can be turned on.
+- **LED colour** warm orange (255 182 78) by default; any RGB value can be set.
+  The LEDs' blue and green are much brighter than their red, so a white
+  balance (a gain per channel, 255 162 96 by default) can be tuned by eye. Gamma correction is optional and off by
+  default.
+- **Handbrake button** works as a normal button (button 12) while the switch is
+  in H. In SEQ it turns handbrake mode on and off, as on stock. Its LED shows
+  the set colour in H, is off in sequential mode, and turns green while
+  handbrake mode is on.
+- **High/low button** is a normal button by default. It can be made a toggle:
+  each press flips it on or off, and its LED shows red for off and green for on.
+
+It also adds things stock doesn't have. A [full list of differences](docs/testing.md#intentional-differences) is in the testing doc.
 
 - **Recovery into the bootloader**, triggered by any of:
   - both buttons held while plugging in
@@ -85,14 +100,46 @@ Tuner's update command.
 The bootloader's own behaviour is inferred from Tuner and from the stock
 firmware, not observed on hardware. See [docs/protocol.md](docs/protocol.md#what-is-not-known).
 
+## Settings and calibration
+
+`tools/openshift_ctl.py` changes the settings above and calibrates the
+shifter. It needs the same access to `/dev/hidraw*` as the flasher (root or
+the udev rule). The LED and button settings need OpenShift 0.2.0 or newer, `balance` and
+`gamma` 0.3.0;
+`status` and `calibrate` also work on stock firmware.
+
+```sh
+python3 tools/openshift_ctl.py status               # settings, mode, lever position, calibration
+python3 tools/openshift_ctl.py logo on              # or: off
+python3 tools/openshift_ctl.py color 255 182 78     # or: color '#ff8000', color default
+python3 tools/openshift_ctl.py highlow toggle       # or: button
+python3 tools/openshift_ctl.py balance              # guided white balance, by eye (interactive)
+python3 tools/openshift_ctl.py balance 255 230 200  # or set the gains R G B, or: default
+python3 tools/openshift_ctl.py gamma on             # gamma 2.2 on the LED output; or: off (default)
+python3 tools/openshift_ctl.py calibrate            # guided: neutral, handbrake, gears 1-8
+python3 tools/openshift_ctl.py calibrate --sequential   # also the sequential up/down thresholds
+python3 tools/openshift_ctl.py calibrate gear3      # one target at the current lever position
+python3 tools/openshift_ctl.py identify-leds        # light each LED in turn
+```
+
+Calibration is the same as Tuner's (`24 21 n`). After calibrating, unplug the
+shifter and plug it back in: until it restarts, gear learning keeps adjusting
+the gear points.
+
+The upstream `hid-velocityone-multi-shift` driver maps only gears, shift
+up/down and high/low, so it ignores the handbrake button. Games that read the
+HID device directly (through `hid-generic`) see it as button 12.
+
 ## Repository layout
 
 | Path | Contents |
 |---|---|
 | `firmware/` | firmware sources (C11, freestanding), linker script, Makefile |
 | `tools/openshift_flash.py` | Linux flasher (stdlib only; hidraw + sysfs) |
+| `tools/openshift_ctl.py` | settings and calibration (stdlib only) |
 | `tests/test_shifter.py` | host build of the gear/sensor logic, checked against float oracles |
 | `tests/test_emulated.py` | whole-firmware tests on an emulated board, incl. differential tests against stock |
+| `tests/test_ctl.py` | settings tool against the shifter core |
 | `tests/test_flasher.py` | flasher against a simulated bootloader and a fake sysfs |
 | `tests/emu/` | Cortex-M3 + AIR32F103 + MLX90393 + USB host emulator (unicorn) |
 | `docs/protocol.md` | update protocol, HID reports and commands, settings page |

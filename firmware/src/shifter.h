@@ -23,6 +23,33 @@
 #define SH_SETTINGS_HALFWORDS 100       /* stock settings block size */
 #define SH_SETTINGS_MAGIC     0x1254u   /* halfword at byte offset 0xc6 */
 
+/* OpenShift settings, in halfwords stock never uses. They count only when
+ * the high byte of SH_ST_FLAGS is SH_ST_MARK: the page can come back from an
+ * update erased (0xFFFF) or zeroed, and both mean the defaults. */
+#define SH_ST_FLAGS   0x50            /* SH_ST_MARK << 8 | SH_OPT_* bits */
+#define SH_ST_COLOR   0x51            /* 0x51..0x53: R, G, B */
+#define SH_ST_GAIN    0x54            /* 0x54..0x56: white balance R, G, B */
+#define SH_ST_MARK    0xA5u
+#define SH_OPT_LOGO          0x01u    /* logo LED on */
+#define SH_OPT_RANGE_TOGGLE  0x02u    /* high/low button latches */
+#define SH_OPT_GAMMA         0x08u    /* gamma 2.2 on the LED output */
+
+/* Default LED colour and white balance (a gain per channel, 255 = full),
+ * both set by eye on a unit. Its blue and green LEDs are much brighter than
+ * its red ones, so their gains are lower. */
+#define SH_DEFAULT_R 255
+#define SH_DEFAULT_G 182
+#define SH_DEFAULT_B 78
+
+#define SH_DEFAULT_GAIN_R 255
+#define SH_DEFAULT_GAIN_G 162
+#define SH_DEFAULT_GAIN_B 96
+
+/* Position of each LED on the WS2812 chain (checked on a unit with 24 3F). */
+#define SH_LED_HANDBRAKE 0
+#define SH_LED_LOGO      1
+#define SH_LED_RANGE     2
+
 /* Result of shifter_sensor_frame(). */
 #define SH_FRAME_OK        0
 #define SH_FRAME_EMPTY     1  /* all-zero frame, ignored */
@@ -100,6 +127,15 @@ typedef struct {
     uint8_t  a_prev;
     uint16_t a_count, b_count;
     uint16_t a_thr, b_thr;   /* 1 scan */
+
+    /* --- OpenShift additions --- */
+    uint8_t  options;        /* SH_OPT_* */
+    uint8_t  color[3];       /* saved LED colour; led_rgb is the live one */
+    uint8_t  gain[3];        /* white balance per channel, 255 = full */
+    uint8_t  range_on;       /* high/low latch state in toggle mode */
+    uint8_t  hb_button;      /* handbrake button as a HID button (H-pattern only) */
+    uint8_t  led_test;       /* chain position lit white by 24 3F, 0xFF = off */
+    uint8_t  booting;        /* 24 00 received: all LEDs yellow */
 } shifter_t;
 
 void     shifter_init(shifter_t *s);
@@ -121,7 +157,8 @@ unsigned shifter_command(shifter_t *s, const uint8_t *buf, unsigned len);
 void     shifter_report1(const shifter_t *s, uint8_t out[5]);
 void     shifter_report36(const shifter_t *s, uint8_t out[64]);
 void     shifter_uart_packet(const shifter_t *s, uint8_t out[16]);
-/* Wire order G,R,B for the three WS2812 LEDs; all zero when asleep. */
+/* Wire order G,R,B for the three WS2812 LEDs, in chain order; all zero when
+ * asleep. */
 void     shifter_led_grb(const shifter_t *s, int asleep, uint8_t out[9]);
 
 /* Exposed for tests. */

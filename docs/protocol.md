@@ -28,7 +28,17 @@ Settings page, as 16-bit halfwords:
 | 0x2a–0x36 | 13 auxiliary bytes (`24 23`) |
 | 0x37–0x3e | per-gear match radius |
 | 0x3f, 0x40 | sequential up / down thresholds |
+| 0x50 | OpenShift options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on |
+| 0x51–0x53 | OpenShift LED colour R, G, B |
+| 0x54–0x56 | OpenShift white balance gains R, G, B |
 | 0x63 | `0x1254` once calibration is complete |
+
+Stock never reads or writes halfwords 0x41–0x62. OpenShift uses 0x50–0x56.
+Without the `0xA5` marker in halfword 0x50 they mean the defaults: logo off,
+high/low as a button, colour 255 182 78 (warm orange), gamma off, gains
+255 162 96. The marker is there
+because the page can come back from an update as zeros, not only as `0xFFFF`:
+OpenShift 0.2.0 read a zeroed page as colour 0 0 0, which turned every LED off.
 
 Stock assumes 2 KB flash pages and rewrites halfwords 0–0x3ff. OpenShift preserves everything outside halfwords 0–99.
 
@@ -77,7 +87,10 @@ Input reports, sent every 2 ms:
 
 - **ID 1, 5 bytes:** `01 gears buttons hb_lo hb_hi`.
   - `gears`: bit n is gear n+1 in H-pattern mode.
-  - `buttons`: bit 0 is sequential down, bit 1 sequential up, bit 2 button A.
+  - `buttons`: bit 0 is sequential down, bit 1 sequential up, bit 2 button A
+    (high/low). OpenShift adds bit 3, the handbrake button (B) while the
+    switch is in H; its report descriptor declares 12 buttons instead of 11.
+    With high/low set to toggle, bit 2 is the latched state.
   - `hb_lo`, `hb_hi`: the 16-bit handbrake axis.
 - **ID 0x24, 64 bytes, status:**
 
@@ -90,6 +103,8 @@ Input reports, sent every 2 ms:
   | 13 + 6k | gear k+1 x, y, big-endian |
   | 17, 29, 30, 35, 36, 41, 42, 47 | per-gear radius / 8 |
   | 18 | flags: A, B, H/SEQ switch, handbrake mode, seq down, seq up |
+  | 23 | OpenShift only (stock sends 0): bit 7 set, bit 0 logo LED on, bit 1 high/low is a toggle, bit 2 toggle is on, bit 3 gamma on |
+  | 24, 53, 54 | OpenShift 0.3.0 and newer (stock sends 0): white balance gains R, G, B |
   | 48 | r / 8 |
   | 59–62 | handbrake rest / pulled x |
   | 63 | mode |
@@ -105,6 +120,36 @@ Output report ID 0x24 (64 bytes) commands:
 | `24 23 b0…b12` | 13 auxiliary bytes; saved |
 | `24 24 g v` | per-gear radius byte for gear g = 1..8: shown in report 0x24 only, not stored (stock behaviour) |
 
+OpenShift adds these (stock ignores them):
+
+| Command | Effect |
+|---|---|
+| `24 30 R G B` | LED colour; saved, and used again after power-up |
+| `24 31 v` | logo LED: 0 off, 1 on; saved |
+| `24 32 v` | high/low button: 0 a plain button, 1 a toggle (starts off at power-up); saved |
+| `24 33 R G B s` | white balance: a gain per channel, 255 = full; saved when s is 1, live only when 0 |
+| `24 34 v` | gamma correction: 1 on, 0 off (default); saved |
+| `24 3F n` | light only LED n of the chain (0–2) in white, to find which LED is which; `24 3F FF` ends it. Not saved |
+
+`tools/openshift_ctl.py` sends all of these.
+
+LEDs in OpenShift:
+
+| LED | Lit |
+|---|---|
+| handbrake button | the set colour with the switch in H; off in sequential mode; green in handbrake mode. Stock lights it in every mode, green in handbrake mode |
+| high/low button | always; as a toggle, red for off and green for on |
+| logo | only when turned on with `24 31 1` |
+
+Lit LEDs that are not green or red use the saved colour, or the live one
+from `24 20`. Each
+channel then goes through gamma 2.2 if it is turned on (colour values are
+perceptual, LED brightness is linear), its white balance gain, then stock's
+2/3 brightness cap. The LEDs' blue is much brighter than their red, so without the gains
+white and warm colours look blue. On the
+WS2812 chain the handbrake LED is first, then the logo, then high/low
+(checked on a unit with `24 3F`).
+
 Without a USB host, the unit streams 16-byte packets on USART1 (PA9) every 5 ms:
 `24 20 gears flags hb_hi hb_lo R G B 0… 11`.
 
@@ -113,5 +158,5 @@ Without a USB host, the unit streams 16-byte packets on USART1 (PA9) every 5 ms:
 - **Delays run a third of their nominal length.** Stock configures `delay_ms()` for a 72 MHz clock but runs the PLL at 216 MHz. OpenShift runs at 72 MHz and uses the effective durations (`STOCK_MS()` in `firmware/src/board.h`).
 - **Control SET_REPORT is unsafe on stock.** A 64-byte SET_REPORT crashes stock (it jumps to address 0); short ones are ignored. Send commands on the interrupt OUT endpoint, as Tuner and hidraw do.
 - **GET_REPORT returns junk on stock:** a fixed buffer of unrelated RAM.
-- **Learning can capture the handbrake pose as gear 4.** Before calibration is complete, holding the lever steady at about (−300, −1500), which is the handbrake-pulled target, is learned as gear 4 with a small radius. Calibrate targets 9 and 10 before the gears, or recalibrate gear 4 afterwards.
+- **Learning can capture other poses as gears.** Until the unit restarts with a complete calibration, gear learning keeps running. Holding the lever steady at about (−300, −1500), which is the handbrake-pulled target, is learned as gear 4 with a small radius, and the sequential up and down poses as gears 3 and 4. Calibrate targets 9 and 10 and the sequential thresholds before the gears, then restart the unit. `openshift_ctl.py calibrate` uses that order.
 - **A unit powered up in gear shows no gear** until the lever has passed through neutral: the first pose seen is taken as neutral.

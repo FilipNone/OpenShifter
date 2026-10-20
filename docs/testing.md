@@ -4,8 +4,9 @@ OpenShift has been tested without hardware, in three layers. Run them all with `
 
 | Suite | Tests | What it covers |
 |---|---|---|
-| `tests/test_shifter.py` | 10 | the gear/sensor core built for the host with trapping UBSan, against exact float oracles |
-| `tests/test_emulated.py` | 18 | the real `openshift.bin`, and the stock image, on an emulated board |
+| `tests/test_shifter.py` | 17 | the gear/sensor core built for the host with trapping UBSan, against exact float oracles; the OpenShift settings, LEDs and buttons |
+| `tests/test_emulated.py` | 20 | the real `openshift.bin`, and the stock image, on an emulated board |
+| `tests/test_ctl.py` | 9 | `openshift_ctl.py` against the shifter core running in a thread |
 | `tests/test_flasher.py` | 19 | the flasher against a simulated bootloader and a fake sysfs tree |
 
 ## The emulator (`tests/emu`)
@@ -23,14 +24,22 @@ OpenShift has been tested without hardware, in three layers. Run them all with `
 - the boot ROM table the stock image calls during PLL setup
 - the MLX90393 at pin level (the firmware bit-bangs SPI)
 - the buttons and the H/SEQ switch
-- a USB host that enumerates like a PC, polls EP1 IN every frame, and can send
-  control requests, interrupt OUT reports, bus resets and suspend/resume
+- a USB host that enumerates like a PC, polls EP1 IN every frame (or skips
+  chosen frames, like a slower host), and can send control requests, interrupt OUT reports, bus resets and suspend/resume
 
 The stock image needs no patches to run. That is the basis of the
 **differential tests**: the same physical inputs go to stock and to OpenShift,
 and everything a PC can see is compared. That covers descriptors, every
 standard and class request, both input reports, the UART stream, LED frames
 and the settings page contents, byte for byte.
+
+OpenShift's own settings start differently from stock (logo off, a warm
+colour), so these tests give both images a settings page with logo on, gamma
+off, stock's yellow and full gains in halfwords 0x50–0x56, which stock
+ignores. The remaining differences are checked explicitly, not skipped: report
+0x24 bytes 23, 24, 53 and 54 are cleared after they are checked, the report descriptor's button count is compared
+as 11, and LED frames in sequential mode are compared with the handbrake LED
+off.
 
 ## What matches stock exactly
 
@@ -71,6 +80,10 @@ real bugs were found this way and fixed:
 - calibration survives a power cycle, and gears 1–8 are then detected
 - a sensor that returns only empty frames is powered off and re-initialised after 2 s
 - GET_REPORT returns the live reports; control SET_REPORT runs commands
+- colour, logo and high/low settings are saved and survive a power cycle; the
+  high/low toggle, the handbrake button in H and the handbrake LED in SEQ
+- both input reports keep flowing when the host polls only every 2 ms or
+  misses frames (0.3.0 failed this: report 0x24 dropped to about 3 per second)
 
 None of these tests may write flash outside the FPEC rules. The emulator records every program and erase and checks it.
 
@@ -84,6 +97,15 @@ None of these tests may write flash outside the FPEC rules. The emulator records
 | Recovery | none | both buttons at power-up, fault, 3 s stall, host never configuring, PLL failure: all enter the vendor bootloader |
 | System clock | 216 MHz | 72 MHz; delays use stock's effective durations |
 | Settings write | read-modify-write of 0x400 halfwords, assuming 2 KB pages | erase, then program only halfwords that need it; works with 1 KB or 2 KB pages; same resulting page |
+| Default LED colour | yellow (255 255 0) | 255 182 78 (warm orange), settable with `24 30` |
+| LED output | colour × 2/3 | optional gamma 2.2 (`24 34 1`, off by default) and a white balance gain per channel, then × 2/3; gamma off and gains of 255 give stock's output |
+| Logo LED | always lit | off unless turned on (`24 31 1`) |
+| Handbrake button (B) | only cycles sequential / handbrake; nothing in H | in H, a HID button (report 1 bit 3, button 12); in SEQ as stock |
+| Handbrake button LED | lit in every mode; green in handbrake mode | the set colour in H, off in sequential mode, green in handbrake mode |
+| High/low button (A) | a button | a button, or a latching toggle (`24 32 1`) with a red/green LED |
+| Report descriptor | 11 buttons | 12 buttons |
+| Report 0x24 bytes 23, 24, 53, 54 | 0 | OpenShift options and white balance |
+| Settings halfwords 0x50–0x56 | unused | OpenShift options, colour and white balance |
 
 Some timings differ by a few tens of milliseconds, all measured in the emulator:
 

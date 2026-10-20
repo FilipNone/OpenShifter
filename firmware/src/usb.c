@@ -4,8 +4,9 @@
  * configuration descriptors and the reports are the stock ones, so the
  * vendor tool sees the same device, with two exceptions: iConfiguration
  * names this firmware, and the report descriptor is rewritten (see
- * usb_report_desc, whose length the HID descriptor carries) and declares 12
- * buttons instead of 11 (button 12 is the handbrake button in H-pattern).
+ * usb_report_desc, whose length the HID descriptor carries) and declares 13
+ * buttons instead of 11: button 1 is reserved and always off, the 12 report
+ * bits are buttons 2 to 13 (13 is the handbrake button in H-pattern).
  *
  * PMA layout (byte offsets): BTABLE 0x00, EP0 TX 0x40, EP0 RX 0x80,
  * EP1 TX 0xC0, EP1 RX 0x100; 64 bytes each.
@@ -27,18 +28,25 @@ const uint8_t usb_device_desc[18] = {
  * collections without a usage, so Linux maps the buttons to BTN_0.. and udev
  * does not tag the device as a joystick; it also gives the buttons 16 bits
  * for 11 usages, and puts report 0x24 on usage 0x01 of the Generic Desktop
- * page, which Linux turns into a REL_MISC axis. */
-const uint8_t usb_report_desc[83] = {
+ * page, which Linux turns into a REL_MISC axis.
+ *
+ * Button 1 is a bit that is always 0, kept for a future button. Linux
+ * (joydev, SDL) numbers buttons from 0 in usage order, so this puts gear 1 at
+ * button 1 there; Windows numbers from 1, where gear 1 is button 2. */
+const uint8_t usb_report_desc[89] = {
     0x05, 0x01,                     /* Usage Page (Generic Desktop) */
     0x09, 0x04,                     /* Usage (Joystick) */
     0xa1, 0x01,                     /* Collection (Application) */
     0x85, 0x01,                     /*   Report ID 1 */
     0x05, 0x09,                     /*   Usage Page (Button) */
-    0x19, 0x01, 0x29, 0x0c,         /*   Usage 1 to 12 */
+    0x19, 0x02, 0x29, 0x0d,         /*   Usage 2 to 13 */
     0x15, 0x00, 0x25, 0x01,         /*   Logical 0 to 1 */
     0x75, 0x01, 0x95, 0x0c,         /*   12 x 1 bit */
     0x81, 0x02,                     /*   Input (Data, Var, Abs) */
-    0x95, 0x04,                     /*   4 x 1 bit */
+    0x09, 0x01,                     /*   Usage 1 */
+    0x95, 0x01,                     /*   1 x 1 bit: reserved, always 0 */
+    0x81, 0x02,                     /*   Input (Data, Var, Abs) */
+    0x95, 0x03,                     /*   3 x 1 bit */
     0x81, 0x03,                     /*   Input (Const): padding */
     0x05, 0x01,                     /*   Usage Page (Generic Desktop) */
     0x09, 0x32,                     /*   Usage (Z): handbrake */

@@ -1,7 +1,7 @@
 {
   "name": "openshift-web",
   "private": true,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Browser tool (WebHID) to update, configure and calibrate a VelocityOne Multi-Shift running OpenShift",
   "license": "MIT",
   "type": "module",

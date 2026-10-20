@@ -35,7 +35,7 @@ and the settings page contents, byte for byte.
 
 OpenShift's own settings start differently from stock (logo off, a warm
 colour), so these tests give both images a settings page with logo on, gamma
-off, stock's yellow and full gains in halfwords 0x50–0x56, which stock
+off, stock's yellow and full gains in halfwords 0x50 to 0x56, which stock
 ignores. The remaining differences are checked explicitly, not skipped: report
 0x24 bytes 23, 24, 53 and 54 are cleared after they are checked, OpenShift's
 report descriptor (and its length in the HID descriptor) is checked against
@@ -50,7 +50,7 @@ off.
 | Sensor initialisation (the SPI command sequence) | `MatchesStock.test_descriptors` |
 | Answers to 22 standard and class requests: GET_STATUS, GET/SET_CONFIGURATION, GET/SET_INTERFACE, SET_IDLE (stalls), GET/SET_PROTOCOL, string/qualifier/HID/report descriptors, unknown vendor requests, SET/CLEAR_FEATURE | `MatchesStock.test_standard_and_class_requests` |
 | Gear learning on an uncalibrated unit, 14 poses, with the settings page compared afterwards | `MatchesStock.test_learning_on_an_uncalibrated_unit` |
-| Tuner calibration of all 10 targets, then a power cycle; gears 1–8; LED colour; auxiliary bytes; switching to sequential; seq up/down; mode button and `24 22`; the handbrake sweep; button A. 54 snapshots of both reports plus both settings pages | `MatchesStock.test_calibration_gears_modes_and_controls` |
+| Tuner calibration of all 10 targets, then a power cycle; gears 1 to 8; LED colour; auxiliary bytes; switching to sequential; seq up/down; mode button and `24 22`; the handbrake sweep; button A. 54 snapshots of both reports plus both settings pages | `MatchesStock.test_calibration_gears_modes_and_controls` |
 | Powering up while in gear | `MatchesStock.test_power_up_in_gear` |
 | UART stream with no USB host | `MatchesStock.test_uart_stream_without_usb_host` |
 | Host suspend (LEDs and sensor off) and resume | `MatchesStock.test_suspend_and_resume` |
@@ -74,11 +74,11 @@ real bugs were found this way and fixed:
 - enumerates as `10f5:7096` and reports `OpenShift <version>`
 - `24 00` turns the LEDs yellow, sets the bootloader flag and resets
 - recovery into the bootloader in each of these cases:
-  - both buttons held at power-up (USB never attaches; one button is ignored)
+  - both buttons (High/low and Handbrake) held at power-up (USB never attaches; one button alone is ignored)
   - a CPU fault
   - a host that resets the bus 8 times without configuring the device
 - keeps running with no host at all: UART stream, no spurious recovery
-- calibration survives a power cycle, and gears 1–8 are then detected
+- calibration survives a power cycle, and gears 1 to 8 are then detected
 - a sensor that returns only empty frames is powered off and re-initialised after 2 s
 - GET_REPORT returns the live reports; control SET_REPORT runs commands
 - colour, logo and high/low settings are saved and survive a power cycle; the
@@ -95,18 +95,18 @@ None of these tests may write flash outside the FPEC rules. The emulator records
 | iConfiguration | 0 (none) | string 4, "OpenShift x.y.z" |
 | GET_REPORT | returns a fixed buffer of unrelated RAM | returns the current report 1 or 0x24 |
 | Control SET_REPORT | ignored if short; a 64-byte one crashes (jump to 0) | runs the command, like interrupt OUT |
-| Recovery | none | both buttons at power-up, fault, 3 s stall, host never configuring, PLL failure: all enter the vendor bootloader |
+| Recovery | none | High/low and Handbrake buttons held at power-up, fault, 3 s stall, host never configuring, PLL failure: all enter the vendor bootloader |
 | System clock | 216 MHz | 72 MHz; delays use stock's effective durations |
 | Settings write | read-modify-write of 0x400 halfwords, assuming 2 KB pages | erase, then program only halfwords that need it; works with 1 KB or 2 KB pages; same resulting page |
 | Default LED colour | yellow (255 255 0) | 255 182 78 (warm orange), settable with `24 30` |
 | LED output | colour × 2/3 | optional gamma 2.2 (`24 34 1`, off by default) and a white balance gain per channel, then × 2/3; gamma off and gains of 255 give stock's output |
 | Logo LED | always lit | off unless turned on (`24 31 1`) |
-| Handbrake button (B) | only cycles sequential / handbrake; nothing in H | in H, a HID button (report 1 bit 3, button 12); in SEQ as stock |
+| Handbrake button (B) | only cycles sequential / handbrake; nothing in H | in H, a HID button (report 1 bit 3, button 13); in SEQ as stock |
 | Handbrake button LED | lit in every mode; green in handbrake mode | the set colour in H, off in sequential mode, green in handbrake mode |
 | High/low button (A) | a button | a button, or a latching toggle (`24 32 1`) with a red/green LED |
-| Report descriptor | 11 buttons in nested application collections without a usage; Linux maps them to `BTN_0`.. and udev does not tag a joystick | one Joystick collection with 12 buttons, padding, Z and report 0x24 on vendor page `0xFF00` (`OpenShift.test_report_descriptor`); not yet checked on a real host |
+| Report descriptor | 11 buttons in nested application collections without a usage; Linux maps them to `BTN_0`.. and udev does not tag a joystick | one Joystick collection with button 1 reserved and always off, the 12 report bits as buttons 2 to 13, padding, Z and report 0x24 on vendor page `0xFF00` (`OpenShift.test_report_descriptor`); not yet checked on a real host |
 | Report 0x24 bytes 23, 24, 53, 54 | 0 | OpenShift options and white balance |
-| Settings halfwords 0x50–0x56 | unused | OpenShift options, colour and white balance |
+| Settings halfwords 0x50 to 0x56 | unused | OpenShift options, colour and white balance |
 
 Some timings differ by a few tens of milliseconds, all measured in the emulator:
 
@@ -150,6 +150,10 @@ make -C firmware                              # builds build/openshift.bin
 make -C firmware test                         # all suites (about 4 minutes)
 python3 -m unittest discover -s tests -p test_flasher.py -v   # just one suite
 ```
+
+The differential tests need the stock image at
+`firmware/stock/VelocityOneTuner_Shift_Firmware.bin` (or `$OPENSHIFT_STOCK_FW`).
+It is not distributed here; without it those tests are skipped.
 
 The web tool has its own tests (Vitest), which also check the image in
 `firmware/build/`:

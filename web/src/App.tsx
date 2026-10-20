@@ -188,8 +188,12 @@ export default function App() {
               </span>
             )}
             {session && !isFlashing && <Button onClick={disconnect}>Disconnect</Button>}
-            <a href={REPO} className={cx('rounded-lg px-2 py-2 text-sm/6 font-medium text-zinc-700 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white',
-              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-led-edge')}>GitHub</a>
+            {/* On a phone there is room for Disconnect and Help only. */}
+            {[['Help', `${REPO}/wiki`], ['GitHub', REPO]].map(([label, href]) => (
+              <a key={label} href={href} className={cx('rounded-lg px-2 py-2 text-sm/6 font-medium text-zinc-700 hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-white',
+                label === 'GitHub' && 'hidden sm:block',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-led-edge')}>{label}</a>
+            ))}
           </div>
         </div>
       </header>

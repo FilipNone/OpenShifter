@@ -3,7 +3,7 @@ import { Description, Field, Fieldset, Input, Label, Legend, Radio, RadioGroup }
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { parseHex, toHex } from '../lib/color'
 import {
-  CMD_BALANCE, CMD_COLOR, CMD_GAMMA, CMD_HIGHLOW, CMD_LED, CMD_LOGO, DEFAULT_COLOR, DEFAULT_GAINS,
+  CMD_BALANCE, CMD_COLOR, CMD_GAMMA, CMD_HIGHLOW, CMD_LED, CMD_LOGO, CMD_NEUTRAL, DEFAULT_COLOR, DEFAULT_GAINS,
   type RGB, type Status,
 } from '../lib/protocol'
 import type { Firmware, Session } from '../lib/session'
@@ -301,15 +301,18 @@ export function SettingsPanel({ session, status, firmware, onPinAccent, onOpenFi
       </Section>
     )
   }
-  return <OpenShiftSettings session={session} status={status} balance={firmware.balance} onPinAccent={onPinAccent} />
+  return <OpenShiftSettings session={session} status={status} balance={firmware.balance} neutral={firmware.neutral}
+    onPinAccent={onPinAccent} />
 }
 
-function OpenShiftSettings({ session, status, balance, onPinAccent }:
-  { session: Session; status: Status; balance: boolean; onPinAccent(c: RGB | null): void }) {
+function OpenShiftSettings({ session, status, balance, neutral, onPinAccent }:
+  { session: Session; status: Status; balance: boolean; neutral: boolean; onPinAccent(c: RGB | null): void }) {
   const logo = useImmediate(session, status.logo, (v) => [CMD_LOGO, +v], (st, v) => st.logo === v, 'logo LED')
   const highlow = useImmediate(session, status.highlowToggle, (v) => [CMD_HIGHLOW, +v],
     (st, v) => st.highlowToggle === v, 'high/low')
   const gamma = useImmediate(session, status.gamma, (v) => [CMD_GAMMA, +v], (st, v) => st.gamma === v, 'gamma')
+  const neutralButton = useImmediate(session, status.neutralButton, (v) => [CMD_NEUTRAL, +v],
+    (st, v) => st.neutralButton === v, 'neutral button')
   const [wbColor, setWbColor] = useState<RGB | null>(null)
   const onEditing = useCallback((c: RGB | null) => { setWbColor(c); onPinAccent(c) }, [onPinAccent])
   const options = [
@@ -354,6 +357,19 @@ function OpenShiftSettings({ session, status, balance, onPinAccent }:
           ))}
         </RadioGroup>
         <div className="mt-2"><SavedNote state={highlow.state} /></div>
+      </Section>
+      <Section title="Neutral button" description="For games that keep the last gear until you pick another one.">
+        {neutral ? (
+          <div className="border-t border-zinc-950/5 dark:border-white/10">
+            <SwitchRow title="Press a button in neutral"
+              description="With the switch in H, the first button (0 on Linux, 1 on Windows) is held while no gear is engaged. Bind it to Neutral in the game."
+              checked={neutralButton.value} onChange={neutralButton.set} state={neutralButton.state} />
+          </div>
+        ) : (
+          <p className="text-sm/6 text-zinc-600 dark:text-zinc-400">
+            The neutral button needs OpenShift 0.4.1 or newer. Update from the Firmware tab.
+          </p>
+        )}
       </Section>
     </div>
   )

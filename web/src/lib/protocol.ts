@@ -22,6 +22,7 @@ export const CMD_LOGO = 0x31
 export const CMD_HIGHLOW = 0x32
 export const CMD_BALANCE = 0x33
 export const CMD_GAMMA = 0x34
+export const CMD_NEUTRAL = 0x35
 
 export const CHUNK = 60
 export const ERASE_WAIT_MS = 2000
@@ -34,6 +35,7 @@ export const OPT_LOGO = 0x01
 export const OPT_RANGE_TOGGLE = 0x02
 export const OPT_RANGE_ON = 0x04
 export const OPT_GAMMA = 0x08
+export const OPT_NEUTRAL = 0x10
 export const OPT_PRESENT = 0x80
 
 export type RGB = readonly [number, number, number]
@@ -48,6 +50,8 @@ export const MODE_HANDBRAKE = 2
  * pushed forward to shift down. */
 export const BTN_SHIFT_UP = 0x01
 export const BTN_SHIFT_DOWN = 0x02
+/** HID button 1, held in H-pattern neutral when OPT_NEUTRAL is on (0.4.1 and newer). */
+export const BTN_NEUTRAL = 0x10
 
 /** A command for report 0x24: payload, zero padded to 63 bytes. */
 export function command(...payload: number[]): Uint8Array {
@@ -105,6 +109,7 @@ export class Status {
   get highlowToggle() { return (this.raw[23] & OPT_RANGE_TOGGLE) !== 0 }
   get highlowOn() { return (this.raw[23] & OPT_RANGE_ON) !== 0 }
   get gamma() { return (this.raw[23] & OPT_GAMMA) !== 0 }
+  get neutralButton() { return (this.raw[23] & OPT_NEUTRAL) !== 0 }
   get gains(): RGB { return [this.raw[24], this.raw[53], this.raw[54]] }
   /** Strength of the magnet's field at the sensor, sent as r / 8. */
   get radius() { return this.raw[48] * 8 }

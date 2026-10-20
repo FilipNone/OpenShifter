@@ -3,13 +3,13 @@
 // commands that are checked against a fresh status, as in openshift_ctl.py.
 import type { InputReport, ShifterDevice } from './hid'
 import { readVersion } from './flash'
-import { PID_BOOT, REPORT_ID, Status, command, parseInputs, type Inputs, type Lever } from './protocol'
+import { PID_BOOT, REPORT_ID, Status, command, compareVersions, parseInputs, type Inputs, type Lever } from './protocol'
 
 export type Firmware =
   | { kind: 'bootloader' }
   | { kind: 'stock' }
   /** `version` is exact from 0.4.0 on; older builds only show what they support. */
-  | { kind: 'openshift'; version: string | null; balance: boolean }
+  | { kind: 'openshift'; version: string | null; balance: boolean; neutral: boolean }
 
 export class SessionError extends Error {}
 
@@ -75,7 +75,8 @@ export class Session {
     if (!st) return null
     if (!st.hasOptions) return { kind: 'stock' }
     const balance = this.version !== null || st.gains.some((g) => g !== 0)
-    return { kind: 'openshift', version: this.version, balance }
+    const neutral = this.version !== null && compareVersions(this.version, '0.4.1') >= 0
+    return { kind: 'openshift', version: this.version, balance, neutral }
   }
 
   nextStatus(timeoutMs = 1000): Promise<Status> {

@@ -33,6 +33,7 @@
 #define SH_OPT_LOGO          0x01u    /* logo LED on */
 #define SH_OPT_RANGE_TOGGLE  0x02u    /* high/low button latches */
 #define SH_OPT_GAMMA         0x08u    /* gamma 2.2 on the LED output */
+#define SH_OPT_NEUTRAL       0x10u    /* HID button 1 held in H-pattern neutral */
 
 /* Default LED colour and white balance (a gain per channel, 255 = full),
  * both set by eye on a unit. Its blue and green LEDs are much brighter than

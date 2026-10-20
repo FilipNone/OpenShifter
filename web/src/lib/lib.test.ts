@@ -8,10 +8,10 @@ import { orientation, slot, tilt, toGate, toSequential } from './gate'
 import type { ShifterDevice } from './hid'
 import { findOpenShiftVersion, loadImage, problems } from './image'
 import {
-  CHUNK, DEFAULT_COLOR, PID_APP, PID_BOOT, Status, chunk, chunkCount, command, compareVersions, engagedGear,
-  parseVersion,
+  BTN_NEUTRAL, CHUNK, CMD_NEUTRAL, DEFAULT_COLOR, PID_APP, PID_BOOT, REPORT_ID, Status, chunk, chunkCount, command,
+  compareVersions, engagedGear, parseVersion,
 } from './protocol'
-import { SimShifter, type SimOptions } from './sim'
+import { POSES, SimShifter, type SimOptions } from './sim'
 import { UDEV_RULE } from './udev'
 
 const BIN = join(__dirname, '..', '..', '..', 'firmware', 'build', 'openshift.bin')
@@ -88,6 +88,25 @@ describe('protocol', () => {
     expect(compareVersions('0.10.0', '0.9.9')).toBeGreaterThan(0)
     expect(engagedGear(0)).toBeNull()
     expect(engagedGear(0b100)).toBe(3)
+  })
+
+  it('turns the neutral button on from 0.4.1', async () => {
+    const neutralOn = async (version: string) => {
+      const sim = new SimShifter({ firmware: fakeImage(4000, `OpenShift ${version}`) })
+      const dev = (await sim.bus().devices())[0]
+      await dev.open()
+      await dev.sendReport(REPORT_ID, command(CMD_NEUTRAL, 1))
+      return { sim, on: new Status(sim.status()).neutralButton }
+    }
+    expect((await neutralOn('0.4.0')).on).toBe(false)
+    const { sim, on } = await neutralOn('0.4.1')
+    expect(on).toBe(true)
+    expect(sim.inputs()[1]).toBe(BTN_NEUTRAL)
+    sim.lever = POSES.gear3
+    expect([...sim.inputs().subarray(0, 2)]).toEqual([0b100, 0])
+    sim.switchH = false
+    sim.lever = POSES.neutral
+    expect(sim.inputs()[1]).toBe(0)
   })
 })
 

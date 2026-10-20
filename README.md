@@ -11,6 +11,7 @@ Free replacement firmware for the **Turtle Beach VelocityOne Multi-Shift**, inst
 - Any LED colour, and the logo LED on or off
 - The Handbrake button as a normal button while the switch is in H
 - The High/low button as a toggle, if you like
+- A neutral button, for games that stay in gear when you move the lever to neutral
 - On Linux, games find the shifter as a joystick with no extra driver
 - The Turtle Beach firmware can be put back at any time
 

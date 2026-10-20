@@ -204,6 +204,22 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn('0.3.0 or newer', err)
 
+    def test_neutral(self):
+        new = Bus('OpenShift 0.4.1')
+        rc, out, err = self.run_ctl('status', bus=new)
+        self.assertEqual(rc, 0, err)
+        self.assertIn('neutral button off', out)
+        self.assertNotIn('neutral button', self.run_ctl('status')[1])
+        self.assertEqual(self.run_ctl('neutral', 'on', bus=new)[0], 0)
+        self.assertEqual(self.dev.settings()[0x50] & 0x10, 0x10)
+        self.assertEqual(self.dev.report1()[2], 0x10)
+        self.assertIn('neutral button on', self.run_ctl('status', bus=new)[1])
+        self.assertEqual(self.run_ctl('neutral', 'off', bus=new)[0], 0)
+        self.assertEqual(self.dev.settings()[0x50] & 0x10, 0)
+        rc, _, err = self.run_ctl('neutral', 'on')
+        self.assertEqual(rc, 2)
+        self.assertIn('0.4.1 or newer', err)
+
     def test_guided_balance(self):
         rc, out, err = self.run_ctl('balance', steps=['b -40', 'g+4', 'r 300', 'x', ''])
         self.assertEqual(rc, 0, err)

@@ -2,7 +2,7 @@
 import type { Snapshot } from '../hooks'
 import { COLUMNS, gearName, orientation, slot, tilt, toGate, toSequential } from '../lib/gate'
 import {
-  BTN_SHIFT_DOWN, BTN_SHIFT_UP, MODE_H, MODE_HANDBRAKE, MODE_SEQ, engagedGear, type Lever, type Status,
+  BTN_NEUTRAL, BTN_SHIFT_DOWN, BTN_SHIFT_UP, MODE_H, MODE_HANDBRAKE, MODE_SEQ, engagedGear, type Lever, type Status,
 } from '../lib/protocol'
 import type { Firmware } from '../lib/session'
 import { cx } from './ui'
@@ -147,6 +147,7 @@ export function DevicePanel({ snap, firmware, name, updating }:
                 <Pill on={(inp.buttons & BTN_SHIFT_DOWN) !== 0}>Shift down</Pill>
                 <Pill on={(inp.buttons & 0x04) !== 0}>High/low</Pill>
                 <Pill on={(inp.buttons & 0x08) !== 0}>Handbrake</Pill>
+                {st.neutralButton && <Pill on={(inp.buttons & BTN_NEUTRAL) !== 0}>Neutral</Pill>}
               </ul>
             </div>
             <div className="col-span-2 sm:col-span-1">

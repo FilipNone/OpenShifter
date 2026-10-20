@@ -6,7 +6,8 @@ Talks to the shifter through /dev/hidrawN with the same 64-byte output report
 (ID 0x24) that VelocityOne Tuner uses, and reads the 0x24 status report back
 to confirm each change. Settings are saved on the shifter. Status and
 calibration also work with the stock firmware; the LED and button settings
-need OpenShift 0.2.0 or newer, white balance and gamma 0.3.0 or newer.
+need OpenShift 0.2.0 or newer, white balance and gamma 0.3.0 or newer, the
+neutral button 0.4.1 or newer.
 
 Access to /dev/hidraw* needs root or the udev rule printed by
 `openshift_flash.py udev-rule`.
@@ -29,12 +30,14 @@ CMD_LOGO = 0x31
 CMD_HIGHLOW = 0x32
 CMD_BALANCE = 0x33
 CMD_GAMMA = 0x34
+CMD_NEUTRAL = 0x35
 CMD_LED_TEST = 0x3F
 
 OPT_LOGO = 0x01
 OPT_RANGE_TOGGLE = 0x02
 OPT_RANGE_ON = 0x04
 OPT_GAMMA = 0x08
+OPT_NEUTRAL = 0x10
 OPT_PRESENT = 0x80
 
 DEFAULT_COLOR = (255, 182, 78)     # warm orange, as in the firmware
@@ -81,6 +84,7 @@ class Status:
     highlow_toggle = property(lambda self: bool(self.raw[23] & OPT_RANGE_TOGGLE))
     highlow_on = property(lambda self: bool(self.raw[23] & OPT_RANGE_ON))
     gamma = property(lambda self: bool(self.raw[23] & OPT_GAMMA))
+    neutral_button = property(lambda self: bool(self.raw[23] & OPT_NEUTRAL))
     gains = property(lambda self: (self.raw[24], self.raw[53], self.raw[54]))
 
     def gear(self, k):
@@ -211,6 +215,8 @@ def show_status(sh: Shifter, out=None):
         if (openshift_version(sh.info) or (0,)) >= (0, 3, 0):
             say('balance    R {} G {} B {}'.format(*st.gains), out)
             say(f'gamma      {"on" if st.gamma else "off"}', out)
+        if (openshift_version(sh.info) or (0,)) >= (0, 4, 1):
+            say(f'neutral button {"on" if st.neutral_button else "off"}', out)
     say(f'lever      x={st.x} y={st.y}', out)
     say('calibration', out)
     say(f'  neutral    {st.neutral}', out)
@@ -271,6 +277,14 @@ def cmd_gamma(sh, args, out=None):
     on = args.state == 'on'
     set_and_check(sh, (CMD_GAMMA, int(on)), lambda st: st.gamma == on, 'gamma')
     say(f'gamma correction {args.state} (saved)', out)
+    return 0
+
+
+def cmd_neutral(sh, args, out=None):
+    need_options(sh, (0, 4, 1))
+    on = args.state == 'on'
+    set_and_check(sh, (CMD_NEUTRAL, int(on)), lambda st: st.neutral_button == on, 'neutral button')
+    say(f'neutral button {args.state} (saved)', out)
     return 0
 
 
@@ -426,6 +440,9 @@ def main(argv=None, bus=None, inp=None, out=None, opener=open_hidraw):
     s.add_argument('gains', nargs='*')
     s = sub.add_parser('gamma', help='turn LED gamma correction on or off (off by default)')
     s.add_argument('state', choices=['on', 'off'])
+    s = sub.add_parser('neutral', help='hold button 1 while the lever is in neutral, '
+                       'for games that need a neutral binding (off by default)')
+    s.add_argument('state', choices=['on', 'off'])
     sub.add_parser('identify-leds', help='light each LED in turn to find which is which')
     args = p.parse_args(argv)
 
@@ -436,6 +453,7 @@ def main(argv=None, bus=None, inp=None, out=None, opener=open_hidraw):
                 'calibrate': lambda sh: cmd_calibrate(sh, args, out, inp),
                 'balance': lambda sh: cmd_balance(sh, args, out, inp),
                 'gamma': lambda sh: cmd_gamma(sh, args, out),
+                'neutral': lambda sh: cmd_neutral(sh, args, out),
                 'identify-leds': lambda sh: cmd_identify(sh, args, out, inp)}
     try:
         sh = open_shifter(bus or LinuxBus(), args.device, opener)

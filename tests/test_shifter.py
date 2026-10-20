@@ -248,14 +248,14 @@ class Core(CoreHelpers, unittest.TestCase):
         for _ in range(40):
             lib.shifter_sensor_frame(t, frame(x2, y2, z2))
             seen.append(self.report1(t)[1])
-        self.assertEqual(seen, [0b100] * 20 + [0] * 5 + [0b10] * 15)
+        self.assertEqual(seen, [0b100] * 5 + [0] * 5 + [0b10] * 30)
         # Through neutral at a normal pace: no extra gap.
         self.feed(t, 0, 0)
         seen = []
         for _ in range(25):
             lib.shifter_sensor_frame(t, frame(x3, y3, z3))
             seen.append(self.report1(t)[1])
-        self.assertEqual(seen, [0] * 20 + [0b100] * 5)
+        self.assertEqual(seen, [0] * 5 + [0b100] * 20)
 
 
 DEFAULT_GAINS = (255, 162, 96)

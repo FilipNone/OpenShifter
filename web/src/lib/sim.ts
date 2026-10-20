@@ -242,7 +242,7 @@ export class SimShifter {
       case CMD_HIGHLOW: this.highlowToggle = a !== 0; this.highlowOn = false; break
       case CMD_BALANCE: this.gains = [a, b, c]; void e; break
       case CMD_GAMMA: this.gamma = a !== 0; break
-      case CMD_NEUTRAL: if (compareVersions(this.version!, '0.4.1') >= 0) this.neutralButton = a !== 0; break
+      case CMD_NEUTRAL: if (compareVersions(this.version!, '0.5.0') >= 0) this.neutralButton = a !== 0; break
     }
   }
 

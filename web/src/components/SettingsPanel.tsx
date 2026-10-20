@@ -367,7 +367,7 @@ function OpenShiftSettings({ session, status, balance, neutral, onPinAccent }:
           </div>
         ) : (
           <p className="text-sm/6 text-zinc-600 dark:text-zinc-400">
-            The neutral button needs OpenShift 0.4.1 or newer. Update from the Firmware tab.
+            The neutral button needs OpenShift 0.5.0 or newer. Update from the Firmware tab.
           </p>
         )}
       </Section>

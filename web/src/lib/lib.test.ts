@@ -90,7 +90,7 @@ describe('protocol', () => {
     expect(engagedGear(0b100)).toBe(3)
   })
 
-  it('turns the neutral button on from 0.4.1', async () => {
+  it('turns the neutral button on from 0.5.0', async () => {
     const neutralOn = async (version: string) => {
       const sim = new SimShifter({ firmware: fakeImage(4000, `OpenShift ${version}`) })
       const dev = (await sim.bus().devices())[0]
@@ -99,7 +99,7 @@ describe('protocol', () => {
       return { sim, on: new Status(sim.status()).neutralButton }
     }
     expect((await neutralOn('0.4.0')).on).toBe(false)
-    const { sim, on } = await neutralOn('0.4.1')
+    const { sim, on } = await neutralOn('0.5.0')
     expect(on).toBe(true)
     expect(sim.inputs()[1]).toBe(BTN_NEUTRAL)
     sim.lever = POSES.gear3

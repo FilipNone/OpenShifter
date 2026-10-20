@@ -50,7 +50,7 @@ export const MODE_HANDBRAKE = 2
  * pushed forward to shift down. */
 export const BTN_SHIFT_UP = 0x01
 export const BTN_SHIFT_DOWN = 0x02
-/** HID button 1, held in H-pattern neutral when OPT_NEUTRAL is on (0.4.1 and newer). */
+/** HID button 1, held in H-pattern neutral when OPT_NEUTRAL is on (0.5.0 and newer). */
 export const BTN_NEUTRAL = 0x10
 
 /** A command for report 0x24: payload, zero padded to 63 bytes. */

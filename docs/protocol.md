@@ -30,7 +30,7 @@ Settings page, as 16-bit halfwords:
 | 0x2a to 0x36 | 13 auxiliary bytes (`24 23`) |
 | 0x37 to 0x3e | per-gear match radius |
 | 0x3f, 0x40 | sequential thresholds in y: lever pushed forward (positive), pulled back (negative) |
-| 0x50 | OpenShift options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on, bit 4 neutral button on (0.4.1) |
+| 0x50 | OpenShift options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on, bit 4 neutral button on (0.5.0) |
 | 0x51 to 0x53 | OpenShift LED colour R, G, B |
 | 0x54 to 0x56 | OpenShift white balance gains R, G, B |
 | 0x63 | `0x1254` once calibration is complete |
@@ -97,7 +97,7 @@ Linux's HID input driver ignores. The top-level usage (Generic Desktop,
 Joystick) and the input and output report IDs and sizes are the same as
 stock's. OpenShift 0.4.0 and newer add feature report 0x25 (below).
 
-In 0.4.0 the 12 button bits are buttons 1 to 12. From 0.4.1 they are buttons
+In 0.4.0 the 12 button bits are buttons 1 to 12. From 0.5.0 they are buttons
 2 to 13, and the next bit (`buttons` bit 4) is button 1, the neutral button,
 followed by 3 padding bits. Linux numbers buttons from 0, so gear 1 is
 button 1 there; Windows numbers from 1, so gear 1 is button 2. The report
@@ -113,7 +113,7 @@ Input reports, sent every 2 ms:
     sources call them `seq_down` and `seq_up` the other way round.
     OpenShift adds bit 3, the handbrake button (B) while the switch is in
     H; its report descriptor declares more buttons than stock's 11 (see
-    above). OpenShift 0.4.1 adds bit 4, the neutral button: set in
+    above). OpenShift 0.5.0 adds bit 4, the neutral button: set in
     H-pattern mode while no gear is engaged, when turned on with `24 35 1`.
     Bits 5 to 7 are always 0.
     With high/low set to toggle, bit 2 is the latched state.
@@ -155,7 +155,7 @@ OpenShift adds these (stock ignores them):
 | `24 32 v` | high/low button: 0 a plain button, 1 a toggle (starts off at power-up); saved |
 | `24 33 R G B s` | white balance: a gain per channel, 255 = full; saved when s is 1, live only when 0 |
 | `24 34 v` | gamma correction: 1 on, 0 off (default); saved |
-| `24 35 v` | neutral button (0.4.1 and newer): 1 on, 0 off (default); saved |
+| `24 35 v` | neutral button (0.5.0 and newer): 1 on, 0 off (default); saved |
 | `24 3F n` | light only LED n of the chain (0 to 2) in white, to find which LED is which; `24 3F FF` ends it. Not saved |
 
 `tools/openshift_ctl.py` sends all of these.
@@ -192,5 +192,6 @@ Without a USB host, the unit streams 16-byte packets on USART1 (PA9) every 5 ms:
 - **Control SET_REPORT is unsafe on stock.** A 64-byte SET_REPORT crashes stock (it jumps to address 0); short ones are ignored. Send commands on the interrupt OUT endpoint, as Tuner and hidraw do.
 - **GET_REPORT returns junk on stock:** a fixed buffer of unrelated RAM.
 - **Learning can capture other poses as gears.** Until the unit restarts with a complete calibration, gear learning keeps running. Holding the lever steady at about (−300, −1500), which is the handbrake-pulled target, is learned as gear 4 with a small radius, and the sequential up and down poses as gears 3 and 4. Calibrate targets 9 and 10 and the sequential thresholds before the gears, then restart the unit. `openshift_ctl.py calibrate` uses that order.
+- **Stock's position updates only every ~42 ms.** Stock reads the sensor every 2 ms, but it writes 2 to register 0x1d at start-up, the burst interval in 20 ms steps if the sensor follows the MLX90393. On a unit, x and y then change only every 40 to 44 ms, which adds up to 42 ms to every gear change on top of the 40 ms debounce. OpenShift 0.5.0 and newer write 0 there, and with a fresh position every 2 ms debounce gears and sequential shifts over 10 ms. A gear change now shows up after about 12 ms instead of 40 to 84 ms.
 - **A unit powered up in gear shows no gear** until the lever has passed through neutral: the first pose seen is taken as neutral.
-- **Stock can skip neutral between gears.** When the lever crosses neutral faster than the 40 ms debounce, stock's report 1 goes from one gear bit straight to the next. Linux's HID input driver sends the changes in a report in button order, so on a downshift a game gets the new gear's press before the old gear's release, and a game that selects neutral on release ends up in neutral. OpenShift 0.4.1 and newer report 10 ms of neutral in between.
+- **Stock can skip neutral between gears.** When the lever crosses neutral faster than the debounce (40 ms on stock), stock's report 1 goes from one gear bit straight to the next. Linux's HID input driver sends the changes in a report in button order, so on a downshift a game gets the new gear's press before the old gear's release, and a game that selects neutral on release ends up in neutral. OpenShift 0.5.0 and newer report 10 ms of neutral in between.

@@ -27,7 +27,7 @@ export class Demo {
   private run = 0
 
   constructor(start: DemoStart) {
-    const fw = start === 'openshift' ? new TextEncoder().encode('\0OpenShift 0.4.1\0') : null
+    const fw = start === 'openshift' ? new TextEncoder().encode('\0OpenShift 0.5.0\0') : null
     this.sim = new SimShifter({ firmware: fw, clock: realClock, bootMode: start === 'update' })
     const g: Point[] = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => {
       const [x, y] = POSES[`gear${k}`]

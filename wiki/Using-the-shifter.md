@@ -27,8 +27,6 @@ Linux and Windows count buttons differently, so look at the column for your syst
 
 With the switch in SEQ, the Handbrake button changes mode and games do not see it.
 
-This numbering is new in OpenShift 0.4.1. With 0.4.0, every button is one lower, so redo your game's mappings after updating.
-
 ### Neutral
 
 Most driving games go to neutral by themselves when you move the lever out of gear: set the game's gearbox to **H-shifter** (or "H-pattern", "manual with clutch").

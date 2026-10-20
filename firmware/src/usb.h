@@ -29,6 +29,6 @@ unsigned usb_get_report(uint8_t report_id, uint8_t *out);
 /* Exposed for tests. */
 extern const uint8_t usb_device_desc[18];
 extern const uint8_t usb_config_desc[41];
-extern const uint8_t usb_report_desc[91];
+extern const uint8_t usb_report_desc[83];
 
 #endif

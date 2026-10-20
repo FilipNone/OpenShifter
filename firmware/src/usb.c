@@ -1,10 +1,11 @@
 /* OpenShift: USB full-speed HID device. SPDX-License-Identifier: MIT
  *
- * Minimal driver for the STM32F1-style USB peripheral. Descriptors are the
- * stock ones byte for byte, so the vendor tool and existing game bindings see
- * the same device, with two exceptions: iConfiguration names this firmware,
- * and the report declares 12 buttons instead of 11 (button 12 is the
- * handbrake button in H-pattern).
+ * Minimal driver for the STM32F1-style USB peripheral. The device and
+ * configuration descriptors and the reports are the stock ones, so the
+ * vendor tool sees the same device, with two exceptions: iConfiguration
+ * names this firmware, and the report descriptor is rewritten (see
+ * usb_report_desc, whose length the HID descriptor carries) and declares 12
+ * buttons instead of 11 (button 12 is the handbrake button in H-pattern).
  *
  * PMA layout (byte offsets): BTABLE 0x00, EP0 TX 0x40, EP0 RX 0x80,
  * EP1 TX 0xC0, EP1 RX 0x100; 64 bytes each.
@@ -21,16 +22,60 @@ const uint8_t usb_device_desc[18] = {
     0xf5, 0x10, 0x96, 0x70, 0x11, 0x01, 0x01, 0x02, 0x03, 0x01,
 };
 
-const uint8_t usb_report_desc[91] = {
-    0x05, 0x01, 0x09, 0x04, 0xa1, 0x01, 0x85, 0x01, 0xa1, 0x01, 0x05, 0x09,
-    0x19, 0x01, 0x29, 0x0c, 0x15, 0x00, 0x25, 0x01, 0x75, 0x01, 0x95, 0x10,
-    0x81, 0x02, 0xc0, 0x05, 0x01, 0xa1, 0x01, 0x09, 0x32, 0x15, 0x00, 0x27,
-    0xff, 0xff, 0x00, 0x00, 0x35, 0x00, 0x47, 0xff, 0xff, 0x00, 0x00, 0x75,
-    0x10, 0x95, 0x01, 0x81, 0x02, 0xc0, 0xa1, 0x01, 0x85, 0x24, 0x09, 0x01,
-    0x15, 0x00, 0x26, 0xff, 0x00, 0x75, 0x08, 0x95, 0x3f, 0x81, 0x06, 0xc0,
-    0xa1, 0x01, 0x85, 0x24, 0x09, 0x01, 0x15, 0x00, 0x26, 0xff, 0x00, 0x75,
-    0x08, 0x95, 0x3f, 0x91, 0x06, 0xc0, 0xc0,
+/* The same reports as stock, described so that the built-in HID drivers of
+ * Linux, Windows and macOS see a joystick. Stock nests application
+ * collections without a usage, so Linux maps the buttons to BTN_0.. and udev
+ * does not tag the device as a joystick; it also gives the buttons 16 bits
+ * for 11 usages, and puts report 0x24 on usage 0x01 of the Generic Desktop
+ * page, which Linux turns into a REL_MISC axis. */
+const uint8_t usb_report_desc[83] = {
+    0x05, 0x01,                     /* Usage Page (Generic Desktop) */
+    0x09, 0x04,                     /* Usage (Joystick) */
+    0xa1, 0x01,                     /* Collection (Application) */
+    0x85, 0x01,                     /*   Report ID 1 */
+    0x05, 0x09,                     /*   Usage Page (Button) */
+    0x19, 0x01, 0x29, 0x0c,         /*   Usage 1 to 12 */
+    0x15, 0x00, 0x25, 0x01,         /*   Logical 0 to 1 */
+    0x75, 0x01, 0x95, 0x0c,         /*   12 x 1 bit */
+    0x81, 0x02,                     /*   Input (Data, Var, Abs) */
+    0x95, 0x04,                     /*   4 x 1 bit */
+    0x81, 0x03,                     /*   Input (Const): padding */
+    0x05, 0x01,                     /*   Usage Page (Generic Desktop) */
+    0x09, 0x32,                     /*   Usage (Z): handbrake */
+    0x15, 0x00, 0x27, 0xff, 0xff, 0x00, 0x00,   /* Logical 0 to 65535 */
+    0x35, 0x00, 0x47, 0xff, 0xff, 0x00, 0x00,   /* Physical 0 to 65535 */
+    0x75, 0x10, 0x95, 0x01,         /*   1 x 16 bits */
+    0x81, 0x02,                     /*   Input (Data, Var, Abs) */
+    0x85, 0x24,                     /*   Report ID 0x24 */
+    0x06, 0x00, 0xff,               /*   Usage Page (Vendor 0xFF00) */
+    0x09, 0x01,                     /*   Usage (1) */
+    0x15, 0x00, 0x26, 0xff, 0x00,   /*   Logical 0 to 255 */
+    0x75, 0x08, 0x95, 0x3f,         /*   63 x 8 bits */
+    0x81, 0x02,                     /*   Input (Data, Var, Abs): status */
+    0x09, 0x01,                     /*   Usage (1) */
+    0x91, 0x02,                     /*   Output (Data, Var, Abs): commands */
+    0x85, 0x25,                     /*   Report ID 0x25 */
+    0x09, 0x02,                     /*   Usage (2) */
+    0x95, 0x0f,                     /*   15 x 8 bits */
+    0xb1, 0x02,                     /*   Feature (Data, Var, Abs): version */
+    0xc0,                           /* End Collection */
 };
+
+/* Feature report 0x25: the firmware version, NUL padded. WebHID cannot read
+ * iConfiguration, so this is how a browser tells OpenShift versions apart. */
+#define VERSION_REPORT_ID  0x25
+#define VERSION_REPORT_LEN 16
+_Static_assert(sizeof OPENSHIFT_VERSION - 1 < VERSION_REPORT_LEN,
+               "version does not fit feature report 0x25");
+
+static unsigned version_report(uint8_t *out)
+{
+    static const char v[] = OPENSHIFT_VERSION;
+    out[0] = VERSION_REPORT_ID;
+    for (unsigned i = 1; i < VERSION_REPORT_LEN; i++)
+        out[i] = i - 1 < sizeof v - 1 ? (uint8_t)v[i - 1] : 0;
+    return VERSION_REPORT_LEN;
+}
 
 const uint8_t usb_config_desc[41] = {
     0x09, 0x02, 0x29, 0x00, 0x01, 0x01, 0x04, 0x80, 0x64,
@@ -353,8 +398,11 @@ static void handle_setup(const uint8_t *s)
         }
     } else if ((type & 0x60) == 0x20) {   /* HID class */
         switch (req) {
-        case 0x01:   /* GET_REPORT */
-            n = usb_get_report((uint8_t)value, ctl_buf);
+        case 0x01:   /* GET_REPORT; wValue: type << 8 | ID */
+            if (value == (0x0300 | VERSION_REPORT_ID))
+                n = version_report(ctl_buf);
+            else
+                n = usb_get_report((uint8_t)value, ctl_buf);
             if (n)
                 ctl_in(ctl_buf, n, length);
             else

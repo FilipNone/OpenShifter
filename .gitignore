@@ -14,6 +14,10 @@ TASKS.md
 
 # Build output.
 firmware/build/
+web/node_modules/
+web/dist/
+# Copied from firmware/build/ by web/scripts/copy-firmware.mjs.
+web/public/firmware/
 
 # Vendor binaries, research inputs and the GPL-2 upstream driver stay local.
 # The stock image for the differential tests goes in firmware/stock/.

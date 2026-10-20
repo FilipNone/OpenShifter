@@ -57,6 +57,42 @@ jobs:
             firmware/build/openshift.bin
             firmware/build/openshift.elf
 
+  web:
+    name: Web tool
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang lld llvm
+
+      - name: Build firmware
+        run: make -C firmware
+
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Run tests
+        working-directory: web
+        run: npm test
+
+      - name: Build site
+        working-directory: web
+        run: npm run build
+
   dependency-review:
     name: Dependency review
     if: github.event_name == 'pull_request'

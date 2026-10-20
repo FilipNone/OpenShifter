@@ -25,6 +25,7 @@ except ImportError:
 
 import openshift_flash as flasher  # noqa: E402
 from harness import OPENSHIFT_BIN, Rig, openshift_image, stock_image  # noqa: E402
+from test_flasher import STOCK_REPORT_DESCRIPTOR  # noqa: E402
 from test_shifter import led  # noqa: E402  (LED colour reference)
 
 if not OPENSHIFT_BIN.exists():
@@ -74,6 +75,48 @@ class OpenShift(EmulatedCase):
         self.assertEqual(r.last(0x01), bytes.fromhex('0100000000'))
         self.assertEqual(r.last(0x24)[:2], bytes([0x24, 0x20]))
         self.assertEqual(len(r.last(0x24)), 64)
+
+    def test_report_descriptor(self):
+        """One joystick collection, as the OS class drivers need it: Linux
+        maps buttons by their application collection (BTN_JOYSTICK only under
+        Joystick, which udev needs for ID_INPUT_JOYSTICK) and ignores vendor
+        page 0xFF00. The reports keep stock's layout."""
+        r = Rig(openshift_image()).boot()
+        d = r.m.host.descriptors
+        self.assertEqual(d['report'], OPENSHIFT_REPORT_DESCRIPTOR)
+        self.assertEqual(int.from_bytes(d['config'][25:27], 'little'), len(d['report']))
+        collections, fields = parse_report_descriptor(d['report'])
+        self.assertEqual(collections, [{'type': 1, 'usage': 0x00010004, 'depth': 0}])
+
+        def bits(kind, report):
+            return sum(f['size'] * f['count'] for f in fields if (f['kind'], f['report']) == (kind, report))
+        self.assertEqual(bits('input', 1), 8 * (len(r.last(0x01)) - 1))
+        self.assertEqual(bits('input', 0x24), 8 * 63)
+        self.assertEqual(bits('output', 0x24), 8 * 63)
+        self.assertEqual(bits('feature', 0x25), 8 * 15)
+        self.assertEqual({(f['kind'], f['report']) for f in fields},
+                         {('input', 1), ('input', 0x24), ('output', 0x24), ('feature', 0x25)})
+
+        data = [f for f in fields if not f['const']]
+        buttons = [u for f in data for u in f['usages'] if u >> 16 == 0x09]
+        self.assertEqual(buttons, [0x00090000 | n for n in range(1, 13)], 'one usage per button bit')
+        for f in data:
+            self.assertEqual(f['application'], 0x00010004)
+            if f['report'] in (0x24, 0x25):
+                self.assertEqual({u >> 16 for u in f['usages']}, {0xFF00})
+            else:
+                self.assertEqual(len(set(f['usages'])), f['count'], 'repeated usage')
+        self.assertIn(0x00010032, [u for f in data for u in f['usages']], 'handbrake axis Z')
+
+    def test_version_feature_report(self):
+        """GET_REPORT(feature 0x25) gives the version, for WebHID, which
+        cannot read iConfiguration. Input GET_REPORT is unchanged."""
+        r = Rig(openshift_image()).boot(50)
+        v = VERSION.encode()
+        self.assertEqual(r.control(0xA1, 0x01, 0x0325, 0, 16), b'\x25' + v + bytes(15 - len(v)))
+        self.assertEqual(r.control(0xA1, 0x01, 0x0325, 0, 4), (b'\x25' + v)[:4])
+        self.assertEqual(r.control(0xA1, 0x01, 0x0101, 0, 5)[0], 0x01)
+        self.assertEqual(r.control(0xA1, 0x01, 0x0125, 0, 16), 'STALL')
 
     def test_update_command_hands_over_to_bootloader(self):
         r = Rig(openshift_image()).boot()
@@ -218,10 +261,78 @@ def as_stock_page():
     return bytes(page)
 
 
+OPENSHIFT_REPORT_DESCRIPTOR = bytes.fromhex(
+    '05010904a1018501 0509 1901290c 15002501 7501950c 8102 9504 8103'
+    '0501 0932 150027ffff0000 350047ffff0000 75109501 8102'
+    '8524 0600ff 0901 150026ff00 7508953f 8102 0901 9102'
+    '8525 0902 950f b102 c0')
+
+
 def as_stock_descriptor(d):
-    """OpenShift's report descriptor has 12 buttons where stock has 11."""
-    assert d.count(b'\x29\x0c') == 1, d.hex()
-    return d.replace(b'\x29\x0c', b'\x29\x0b')
+    """OpenShift rewrites the report descriptor (checked by
+    OpenShift.test_report_descriptor); everything else must match stock.
+    `d` may be a read cut short by wLength."""
+    if d == OPENSHIFT_REPORT_DESCRIPTOR:
+        return STOCK_REPORT_DESCRIPTOR
+    assert OPENSHIFT_REPORT_DESCRIPTOR.startswith(d), d.hex()
+    return STOCK_REPORT_DESCRIPTOR[:len(d)]
+
+
+def as_stock_hid_descriptor(d):
+    """`d` with the HID descriptor in it carrying stock's report descriptor length."""
+    offset = d.index(b'\x09\x21')
+    n = int.from_bytes(d[offset + 7:offset + 9], 'little')
+    assert n == len(OPENSHIFT_REPORT_DESCRIPTOR), n
+    return d[:offset + 7] + len(STOCK_REPORT_DESCRIPTOR).to_bytes(2, 'little') + d[offset + 9:]
+
+
+def parse_report_descriptor(d):
+    """(collections, fields) of a HID report descriptor, with the usages and
+    enclosing application collection the Linux parser (hid-core.c) assigns:
+    a field with more values than usages repeats the last usage."""
+    page, rid, size, count = 0, 0, 0, 0
+    usages, umin = [], None
+    stack, collections, fields = [], [], []
+    i = 0
+    while i < len(d):
+        b = d[i]
+        if b == 0xFE:   # long item
+            i += 3 + d[i + 1]
+            continue
+        n = (0, 1, 2, 4)[b & 3]
+        v = int.from_bytes(d[i + 1:i + 1 + n], 'little')
+        tag, i = b & 0xFC, i + 1 + n
+        full = (lambda u, n=n: u if n == 4 else page << 16 | u)
+        if tag == 0x04:
+            page = v
+        elif tag == 0x84:
+            rid = v
+        elif tag == 0x74:
+            size = v
+        elif tag == 0x94:
+            count = v
+        elif tag == 0x08:
+            usages.append(full(v))
+        elif tag == 0x18:
+            umin = full(v)
+        elif tag == 0x28:
+            usages.extend(range(umin, full(v) + 1))
+        elif tag == 0xA0:
+            c = {'type': v, 'usage': usages[0] if usages else 0, 'depth': len(stack)}
+            collections.append(c)
+            stack.append(c)
+        elif tag == 0xC0:
+            stack.pop()
+        elif tag in (0x80, 0x90, 0xB0):
+            apps = [c['usage'] for c in stack if c['type'] == 1]
+            fields.append({'kind': {0x80: 'input', 0x90: 'output', 0xB0: 'feature'}[tag],
+                           'report': rid, 'size': size, 'count': count, 'const': bool(v & 1),
+                           'usages': [usages[min(k, len(usages) - 1)] for k in range(count)] if usages else [],
+                           'application': apps[-1] if apps else 0})
+        if (tag & 0x0C) == 0:   # main item: local items reset
+            usages, umin = [], None
+    assert not stack, 'unbalanced collections'
+    return collections, fields
 
 
 def seq_leds(frames):
@@ -266,6 +377,7 @@ class MatchesStock(EmulatedCase):
             d['config'] = d['config'][:6] + b'\0' + d['config'][7:]   # iConfiguration
             if img != stock_image():
                 d['report'] = as_stock_descriptor(d['report'])
+                d['config'] = as_stock_hid_descriptor(d['config'])
             return d, r.m.sensor.log[:8]
         a, b = self.both(sc)
         self.assertEqual(a, b)
@@ -283,8 +395,10 @@ class MatchesStock(EmulatedCase):
             r = Rig(img).boot(50)
             out = [r.control(*q) for q in reqs]
             if img != stock_image():
-                out[reqs.index((0x81, 6, 0x2200, 0, 64))] = as_stock_descriptor(
-                    out[reqs.index((0x81, 6, 0x2200, 0, 64))])
+                k = reqs.index((0x81, 6, 0x2200, 0, 64))
+                out[k] = as_stock_descriptor(out[k])
+                k = reqs.index((0x81, 6, 0x2100, 0, 9))
+                out[k] = as_stock_hid_descriptor(out[k])
             # Accepted by both; only OpenShift acts on it (test_set_report_runs_commands).
             out.append(r.control(0x21, 0x09, 0x0224, 0, 9, bytes([0x24, 0x20, 0, 0, 0, 0, 0x44, 0x55, 0x66])))
             return out

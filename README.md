@@ -1,4 +1,4 @@
-# OpenShift
+# OpenShifter
 
 Free replacement firmware for the **Turtle Beach VelocityOne Multi-Shift**, installed from your browser.
 

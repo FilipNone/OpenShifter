@@ -40,6 +40,10 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
+          if ! git ls-remote "https://x-access-token:${TOKEN}@github.com/${REPO}.wiki.git" >/dev/null 2>&1; then
+            echo "::error::The wiki has no git repository yet. Open https://github.com/${REPO}/wiki, press 'Create the first page', save it, then run this workflow again."
+            exit 1
+          fi
           git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${REPO}.wiki.git" "$RUNNER_TEMP/wiki"
           rsync -a --delete --exclude .git wiki/ "$RUNNER_TEMP/wiki/"
           cd "$RUNNER_TEMP/wiki"

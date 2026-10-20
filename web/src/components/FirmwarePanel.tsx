@@ -13,9 +13,12 @@ import type { Firmware } from '../lib/session'
 import { firmwareLabel } from './DevicePanel'
 import { Button, Notice, Progress, Section, Spinner, cx, focusRing } from './ui'
 
-interface Manifest { version: string; file: string; size: number; sha256: string }
+interface Manifest { version: string; tag: string; file: string; size: number; sha256: string }
 
-type Bundled = { state: 'loading' } | { state: 'ready'; image: FirmwareImage } | { state: 'missing'; reason: string }
+type Bundled =
+  | { state: 'loading' }
+  | { state: 'ready'; image: FirmwareImage; tag: string }
+  | { state: 'missing'; reason: string }
 
 function useBundled(): Bundled {
   const [b, setB] = useState<Bundled>({ state: 'loading' })
@@ -29,12 +32,14 @@ function useBundled(): Bundled {
           throw new Error('this copy of the page has no bundled firmware')
         }
         const m = (await r.json()) as Manifest
+        // A manifest without a tag comes from a local build, which the page does not offer.
+        if (!m.tag) throw new Error('this copy of the page has no release firmware')
         // A redeploy can rebuild the image under the same name.
         const f = await fetch(`./firmware/${m.file}`, { cache: 'no-cache' })
         if (!f.ok) throw new Error(`could not download ${m.file}`)
         const image = await loadImage(new Uint8Array(await f.arrayBuffer()), m.file)
         if (image.sha256 !== m.sha256) throw new Error(`${m.file} does not match its manifest`)
-        if (live) setB({ state: 'ready', image })
+        if (live) setB({ state: 'ready', image, tag: m.tag })
       } catch (e) {
         if (live) setB({ state: 'missing', reason: e instanceof Error ? e.message : String(e) })
       }
@@ -178,7 +183,7 @@ export function FirmwarePanel({ bus, device, firmware, onBeforeFlash, onFlashed,
       <Section title="Firmware" description={<>Running now: <span className="font-medium text-zinc-950 dark:text-white">{firmwareLabel(firmware)}</span></>}>
         <RadioGroup value={source} onChange={setSource} aria-label="Firmware to install" className="grid gap-3 sm:grid-cols-2">
           <Choice value="bundled" disabled={bundled.state !== 'ready'} title={bundled.state === 'ready' ? `OpenShift ${bundled.image.openshiftVersion}` : 'OpenShift'}
-            text={bundled.state === 'ready' ? 'Built from this repository and shipped with the page.' :
+            text={bundled.state === 'ready' ? `The file from release ${bundled.tag} on GitHub, checked against its SHA-256.` :
               bundled.state === 'loading' ? 'Loading…' : `Unavailable: ${bundled.reason}.`} />
           <Choice value="file" title="A file on this computer" text="A .bin image, for example a stock image from VelocityOne Tuner, to go back to stock." />
         </RadioGroup>

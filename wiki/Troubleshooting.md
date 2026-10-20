@@ -4,6 +4,8 @@
 | The shifter is missing from the browser's list (Linux) | Install the udev rule from [Install](Install#before-you-start), then unplug the shifter and plug it back in. |
 | "Could not connect" or "could not open the shifter" | Close VelocityOne Tuner and any other program that uses the shifter, then try again. On Linux, check the udev rule. |
 | The update stopped halfway | The shifter waits in update mode. Connect it again in the web tool, open the **Firmware** tab and install again. |
+| An update started in Firefox stopped | Firmware updates do not work in Firefox. The shifter waits in update mode: open the web tool in Chrome, Edge or Opera, connect it and install again from the **Firmware** tab. |
+| Firefox shows an error when you change a setting | This is normal with the [Firefox add-on](Firefox). The setting still changes. |
 | The shifter does nothing after an update | Start it in update mode by hand (below), then install again. |
 | A gear is detected wrong | [Calibrate](Calibrate) again, then unplug the shifter and plug it back in. |
 | No gear shows right after plugging in | Move the lever through neutral once. |

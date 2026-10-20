@@ -7,7 +7,7 @@ Talks to the shifter through /dev/hidrawN with the same 64-byte output report
 to confirm each change. Settings are saved on the shifter. Status and
 calibration also work with the stock firmware; the LED and button settings
 need OpenShift 0.2.0 or newer, white balance and gamma 0.3.0 or newer, the
-neutral button 0.4.1 or newer.
+neutral button 0.5.0 or newer.
 
 Access to /dev/hidraw* needs root or the udev rule printed by
 `openshift_flash.py udev-rule`.
@@ -215,7 +215,7 @@ def show_status(sh: Shifter, out=None):
         if (openshift_version(sh.info) or (0,)) >= (0, 3, 0):
             say('balance    R {} G {} B {}'.format(*st.gains), out)
             say(f'gamma      {"on" if st.gamma else "off"}', out)
-        if (openshift_version(sh.info) or (0,)) >= (0, 4, 1):
+        if (openshift_version(sh.info) or (0,)) >= (0, 5, 0):
             say(f'neutral button {"on" if st.neutral_button else "off"}', out)
     say(f'lever      x={st.x} y={st.y}', out)
     say('calibration', out)
@@ -281,7 +281,7 @@ def cmd_gamma(sh, args, out=None):
 
 
 def cmd_neutral(sh, args, out=None):
-    need_options(sh, (0, 4, 1))
+    need_options(sh, (0, 5, 0))
     on = args.state == 'on'
     set_and_check(sh, (CMD_NEUTRAL, int(on)), lambda st: st.neutral_button == on, 'neutral button')
     say(f'neutral button {args.state} (saved)', out)

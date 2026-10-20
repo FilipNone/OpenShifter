@@ -20,7 +20,7 @@ Download the `openshift-….bin` file from the [latest release](https://github.c
 
 ```sh
 python3 tools/openshift_flash.py info                        # which firmware is running (changes nothing)
-python3 tools/openshift_flash.py flash openshift-0.4.1.bin   # asks you to type "flash" first
+python3 tools/openshift_flash.py flash openshift-0.5.0.bin   # asks you to type "flash" first
 ```
 
 The same `flash` command puts the stock firmware back: give it `VelocityOneTuner_Shift_Firmware.bin` instead. If a flash stops halfway, run the same command again.

@@ -47,7 +47,7 @@ off.
 | Area | Covered by |
 |---|---|
 | Device, configuration and HID descriptors (except the report descriptor length); strings (except iConfiguration, see below) | `MatchesStock.test_descriptors` |
-| Sensor initialisation (the SPI command sequence) | `MatchesStock.test_descriptors` |
+| Sensor initialisation (the SPI command sequence), except the burst interval | `MatchesStock.test_descriptors` |
 | Answers to 22 standard and class requests: GET_STATUS, GET/SET_CONFIGURATION, GET/SET_INTERFACE, SET_IDLE (stalls), GET/SET_PROTOCOL, string/qualifier/HID/report descriptors, unknown vendor requests, SET/CLEAR_FEATURE | `MatchesStock.test_standard_and_class_requests` |
 | Gear learning on an uncalibrated unit, 14 poses, with the settings page compared afterwards | `MatchesStock.test_learning_on_an_uncalibrated_unit` |
 | Tuner calibration of all 10 targets, then a power cycle; gears 1 to 8; LED colour; auxiliary bytes; switching to sequential; seq up/down; mode button and `24 22`; the handbrake sweep; button A. 54 snapshots of both reports plus both settings pages | `MatchesStock.test_calibration_gears_modes_and_controls` |
@@ -102,7 +102,9 @@ None of these tests may write flash outside the FPEC rules. The emulator records
 | LED output | colour × 2/3 | optional gamma 2.2 (`24 34 1`, off by default) and a white balance gain per channel, then × 2/3; gamma off and gains of 255 give stock's output |
 | Logo LED | always lit | off unless turned on (`24 31 1`) |
 | Handbrake button (B) | only cycles sequential / handbrake; nothing in H | in H, a HID button (report 1 bit 3, button 13); in SEQ as stock |
-| Gear to gear faster than the 40 ms debounce | report 1 goes from the old gear bit straight to the new one | 10 ms of neutral (`gears` 0) in between, so Linux does not send the new gear's press before the old gear's release on a downshift (`Core.test_calibration_round_trip_and_gears`) |
+| Gear to gear faster than the debounce | report 1 goes from the old gear bit straight to the new one | 10 ms of neutral (`gears` 0) in between, so Linux does not send the new gear's press before the old gear's release on a downshift (`Core.test_calibration_round_trip_and_gears`) |
+| Sensor burst interval (register 0x1d) | 2: a new position about every 42 ms on a real unit, though the firmware reads it every 2 ms | 0: back to back, so each 2 ms read has a fresh position; not yet checked on a real unit |
+| Gear and sequential debounce | 20 samples (40 ms) | 5 samples (10 ms) (`Core.test_calibration_round_trip_and_gears`); not yet checked on a real unit |
 | Handbrake button LED | lit in every mode; green in handbrake mode | the set colour in H, off in sequential mode, green in handbrake mode |
 | High/low button (A) | a button | a button, or a latching toggle (`24 32 1`) with a red/green LED |
 | Report descriptor | 11 buttons in nested application collections without a usage; Linux maps them to `BTN_0`.. and udev does not tag a joystick | one Joystick collection with the 12 report bits as buttons 2 to 13, button 1 for the optional neutral button (`24 35 1`), padding, Z and report 0x24 on vendor page `0xFF00` (`OpenShift.test_report_descriptor`); not yet checked on a real host |

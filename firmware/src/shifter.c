@@ -257,7 +257,10 @@ void shifter_init(shifter_t *s)
     uint8_t *p = (uint8_t *)s;
     for (unsigned i = 0; i < sizeof *s; i++)
         p[i] = 0;
-    s->deb_limit = 20;
+    /* Stock uses 20 samples (40 ms), but its sensor gave a new position
+     * only every ~42 ms (see sensor.c). With one every 2 ms, 5 fresh
+     * samples that agree confirm a gear 30 ms sooner. */
+    s->deb_limit = 5;
     s->ref_r = F_1100;
     s->neutral_y = -50;
     s->seq_up_thr = 1800;

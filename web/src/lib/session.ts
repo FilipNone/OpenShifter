@@ -75,7 +75,7 @@ export class Session {
     if (!st) return null
     if (!st.hasOptions) return { kind: 'stock' }
     const balance = this.version !== null || st.gains.some((g) => g !== 0)
-    const neutral = this.version !== null && compareVersions(this.version, '0.4.1') >= 0
+    const neutral = this.version !== null && compareVersions(this.version, '0.5.0') >= 0
     return { kind: 'openshift', version: this.version, balance, neutral }
   }
 

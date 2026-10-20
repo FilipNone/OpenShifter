@@ -111,7 +111,10 @@ void sensor_init(void)
     (void)cmd_status(&ex, 1);   /* exit any running mode */
     delay_ms(STOCK_MS(50));
     write_reg(0x1c, 0x1430);
-    write_reg(0x1d, 0x0002);
+    /* Low 6 bits: burst interval in 20 ms steps, as the MLX90393's
+     * BURST_DATA_RATE. Stock writes 2, and the position then changes only
+     * every ~42 ms although it is read every 2 ms. 0 measures back to back. */
+    write_reg(0x1d, 0x0000);
     write_reg(0x1e, 0x8000);
     (void)read_reg(0x23);
     delay_ms(STOCK_MS(20));

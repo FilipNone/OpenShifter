@@ -97,7 +97,7 @@ typedef struct {
     uint8_t  deb_prev;       /* pc+0 */
     uint8_t  cand;           /* pc+1 */
     uint8_t  deb_count;      /* pc+2 */
-    uint8_t  deb_limit;      /* pc+3: 20 samples */
+    uint8_t  deb_limit;      /* pc+3: 5 samples (stock 20) */
     uint8_t  empty_frames;   /* pc+4 */
     uint8_t  neutral_flags;  /* pc+5 */
     uint8_t  latched;        /* pc+8 */

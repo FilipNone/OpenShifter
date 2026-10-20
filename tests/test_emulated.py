@@ -287,6 +287,14 @@ def as_stock_hid_descriptor(d):
     return d[:offset + 7] + len(STOCK_REPORT_DESCRIPTOR).to_bytes(2, 'little') + d[offset + 9:]
 
 
+def as_stock_sensor_log(log):
+    """OpenShift writes 0 to the sensor's burst interval (sensor.c) where stock
+    writes 2; the rest of the sensor start must match stock."""
+    ours, stock = b'\x60\x00\x00\x74', b'\x60\x00\x02\x74'
+    assert ours in log, log
+    return [stock if c == ours else c for c in log]
+
+
 def parse_report_descriptor(d):
     """(collections, fields) of a HID report descriptor, with the usages and
     enclosing application collection the Linux parser (hid-core.c) assigns:
@@ -376,10 +384,12 @@ class MatchesStock(EmulatedCase):
             d = dict(r.m.host.descriptors)
             d['strings'] = {k: v for k, v in d['strings'].items() if k != 4}
             d['config'] = d['config'][:6] + b'\0' + d['config'][7:]   # iConfiguration
+            log = r.m.sensor.log[:8]
             if img != stock_image():
                 d['report'] = as_stock_descriptor(d['report'])
                 d['config'] = as_stock_hid_descriptor(d['config'])
-            return d, r.m.sensor.log[:8]
+                log = as_stock_sensor_log(log)
+            return d, log
         a, b = self.both(sc)
         self.assertEqual(a, b)
 

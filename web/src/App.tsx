@@ -239,7 +239,6 @@ export default function App() {
       <footer className="border-t border-zinc-950/5 dark:border-white/10">
         <div className="mx-auto flex max-w-6xl flex-wrap justify-between gap-2 px-4 py-6 text-sm/6 text-zinc-600 sm:px-6 dark:text-zinc-400">
           <p>OpenShift is MIT licensed. It is not made or endorsed by Turtle Beach.</p>
-          <p>The page talks to the shifter only through your browser; nothing is uploaded.</p>
         </div>
       </footer>
     </div>

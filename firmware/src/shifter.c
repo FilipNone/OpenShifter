@@ -321,7 +321,7 @@ void shifter_load(shifter_t *s, const uint16_t st[SH_SETTINGS_HALFWORDS])
     s->g1_left_of_g3 = s->gear_x[0] < s->gear_x[2];
 
     if (st[SH_ST_FLAGS] >> 8 == SH_ST_MARK) {
-        s->options = (uint8_t)(st[SH_ST_FLAGS] & (SH_OPT_LOGO | SH_OPT_RANGE_TOGGLE | SH_OPT_GAMMA));
+        s->options = (uint8_t)(st[SH_ST_FLAGS] & (SH_OPT_LOGO | SH_OPT_RANGE_TOGGLE | SH_OPT_GAMMA | SH_OPT_NEUTRAL));
         if (st[SH_ST_COLOR] <= 0xff && st[SH_ST_COLOR + 1] <= 0xff && st[SH_ST_COLOR + 2] <= 0xff)
             for (int i = 0; i < 3; i++)
                 s->color[i] = (uint8_t)st[SH_ST_COLOR + i];
@@ -834,6 +834,11 @@ unsigned shifter_command(shifter_t *s, const uint8_t *buf, unsigned len)
             return 0;
         s->options = (uint8_t)((s->options & ~SH_OPT_GAMMA) | (b[2] ? SH_OPT_GAMMA : 0));
         return SH_ACT_LED | SH_ACT_SAVE;
+    case 0x35:  /* neutral button: 1 on, 0 off (default); saved */
+        if (b[2] > 1)
+            return 0;
+        s->options = (uint8_t)((s->options & ~SH_OPT_NEUTRAL) | (b[2] ? SH_OPT_NEUTRAL : 0));
+        return SH_ACT_SAVE;
     case 0x3f:  /* light only chain position 0..2 in white; 0xFF ends */
         if (b[2] > 2 && b[2] != 0xff)
             return 0;
@@ -849,7 +854,10 @@ void shifter_report1(const shifter_t *s, uint8_t out[5])
     out[0] = 0x01;
     out[1] = s->gears;
     uint8_t range = (s->options & SH_OPT_RANGE_TOGGLE) ? s->range_on : s->btn_a;
-    out[2] = (uint8_t)(s->seq_down + 2 * s->seq_up + 4 * range + 8 * s->hb_button);
+    /* Bit 4 is HID button 1: held in H-pattern while no gear is engaged, for
+     * games that need a binding to select neutral. */
+    uint8_t neutral = (s->options & SH_OPT_NEUTRAL) && s->mode == SH_MODE_HPATTERN && !s->gears;
+    out[2] = (uint8_t)(s->seq_down + 2 * s->seq_up + 4 * range + 8 * s->hb_button + 16 * neutral);
     out[3] = (uint8_t)(s->handbrake & 0xff);
     out[4] = (uint8_t)(s->handbrake >> 8);
 }

@@ -16,7 +16,7 @@ Linux and Windows count buttons differently, so look at the column for your syst
 
 | Linux button | Windows button | Comes from |
 |---|---|---|
-| 0 | 1 | nothing yet, always off (kept for a future update) |
+| 0 | 1 | lever in neutral, with the switch in H. Only if the [neutral button](Settings) is on. |
 | 1 to 7 | 2 to 8 | gears 1 to 7 |
 | 8 | 9 | reverse |
 | 9 | 10 | lever pulled back in sequential mode (shift up) |
@@ -28,6 +28,12 @@ Linux and Windows count buttons differently, so look at the column for your syst
 With the switch in SEQ, the Handbrake button changes mode and games do not see it.
 
 This numbering is new in OpenShift 0.4.1. With 0.4.0, every button is one lower, so redo your game's mappings after updating.
+
+### Neutral
+
+Most driving games go to neutral by themselves when you move the lever out of gear: set the game's gearbox to **H-shifter** (or "H-pattern", "manual with clutch").
+
+Some games keep the last gear until you pick another one. For those, turn on the **Neutral button** in [Settings](Settings) and bind the first button (Linux 0, Windows 1) to the game's **Neutral** action.
 
 ## LEDs
 

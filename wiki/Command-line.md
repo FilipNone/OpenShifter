@@ -36,6 +36,7 @@ python3 tools/openshift_ctl.py logo on                  # or off
 python3 tools/openshift_ctl.py highlow toggle           # or button
 python3 tools/openshift_ctl.py balance                  # white balance, guided
 python3 tools/openshift_ctl.py gamma on                 # or off
+python3 tools/openshift_ctl.py neutral on               # neutral button, or off
 ```
 
 After calibrating, unplug the shifter and plug it back in. `calibrate` and `status` also work with the stock firmware.

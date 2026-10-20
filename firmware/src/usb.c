@@ -5,8 +5,9 @@
  * vendor tool sees the same device, with two exceptions: iConfiguration
  * names this firmware, and the report descriptor is rewritten (see
  * usb_report_desc, whose length the HID descriptor carries) and declares 13
- * buttons instead of 11: button 1 is reserved and always off, the 12 report
- * bits are buttons 2 to 13 (13 is the handbrake button in H-pattern).
+ * buttons instead of 11: button 1 is the optional neutral button, the 12
+ * stock report bits are buttons 2 to 13 (13 is the handbrake button in
+ * H-pattern).
  *
  * PMA layout (byte offsets): BTABLE 0x00, EP0 TX 0x40, EP0 RX 0x80,
  * EP1 TX 0xC0, EP1 RX 0x100; 64 bytes each.
@@ -30,9 +31,9 @@ const uint8_t usb_device_desc[18] = {
  * for 11 usages, and puts report 0x24 on usage 0x01 of the Generic Desktop
  * page, which Linux turns into a REL_MISC axis.
  *
- * Button 1 is a bit that is always 0, kept for a future button. Linux
- * (joydev, SDL) numbers buttons from 0 in usage order, so this puts gear 1 at
- * button 1 there; Windows numbers from 1, where gear 1 is button 2. */
+ * Button 1 is report bit 12, the neutral button (off unless turned on with
+ * 24 35 1). Linux (joydev, SDL) numbers buttons from 0 in usage order, so
+ * gear 1 is button 1 there; Windows numbers from 1, where gear 1 is button 2. */
 const uint8_t usb_report_desc[89] = {
     0x05, 0x01,                     /* Usage Page (Generic Desktop) */
     0x09, 0x04,                     /* Usage (Joystick) */
@@ -44,7 +45,7 @@ const uint8_t usb_report_desc[89] = {
     0x75, 0x01, 0x95, 0x0c,         /*   12 x 1 bit */
     0x81, 0x02,                     /*   Input (Data, Var, Abs) */
     0x09, 0x01,                     /*   Usage 1 */
-    0x95, 0x01,                     /*   1 x 1 bit: reserved, always 0 */
+    0x95, 0x01,                     /*   1 x 1 bit: neutral */
     0x81, 0x02,                     /*   Input (Data, Var, Abs) */
     0x95, 0x03,                     /*   3 x 1 bit */
     0x81, 0x03,                     /*   Input (Const): padding */

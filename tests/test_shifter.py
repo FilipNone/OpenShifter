@@ -360,6 +360,50 @@ class Options(CoreHelpers, unittest.TestCase):
         self.assertEqual(self.report36(s)[63], 0)
         self.assertEqual(self.leds(s)[0], WARM)
 
+    def test_neutral_button(self):
+        s = self.new()
+        self.scan(s, 1)
+        self.feed(s, 0, 0)
+        self.cmd(s, 0x24, 0x21, 9)
+        self.feed(s, -300, -1500)
+        self.cmd(s, 0x24, 0x21, 10)
+        for k, (x, y, z) in enumerate(GEARS, 1):
+            self.feed(s, x, y, z)
+            self.cmd(s, 0x24, 0x21, k)
+        s = self.new(self.save(s))
+        self.scan(s, 1)
+        self.feed(s, 0, 0)
+        self.assertEqual(self.report1(s)[2], 0, 'off by default')
+
+        self.assertEqual(self.cmd(s, 0x24, 0x35, 1), SH_ACT_SAVE)
+        self.assertEqual(self.cmd(s, 0x24, 0x35, 2), 0)
+        self.assertEqual(self.report36(s)[23], 0x90)
+        self.assertEqual(self.save(s)[0x50], 0xA510)
+        # H: report 1 bit 12 (button 1) while no gear is engaged.
+        self.assertEqual(self.report1(s)[1:3], bytes([0, 0x10]))
+        for k, (x, y, z) in enumerate(GEARS, 1):
+            self.feed(s, x + 120, y - 90, z)
+            self.assertEqual(self.report1(s)[1:3], bytes([1 << (k - 1), 0]), f'gear {k}')
+            self.feed(s, 0, 0)
+            self.assertEqual(self.report1(s)[1:3], bytes([0, 0x10]), f'neutral after gear {k}')
+        # Saved; never set in sequential or handbrake mode.
+        s = self.new(self.save(s))
+        self.scan(s, 1)
+        self.feed(s, 0, 0)
+        self.assertEqual(self.report1(s)[2], 0x10)
+        self.scan(s, 0)
+        self.feed(s, 0, 0)
+        self.assertEqual(self.report1(s)[2], 0, 'not in sequential mode')
+        self.click(s, 0, b=1)
+        self.assertEqual(self.report36(s)[63], 2)
+        self.feed(s, 0, 0)
+        self.assertEqual(self.report1(s)[2], 0, 'not in handbrake mode')
+        self.scan(s, 1)
+        self.feed(s, 0, 0)
+        self.assertEqual(self.cmd(s, 0x24, 0x35, 0), SH_ACT_SAVE)
+        self.assertEqual(self.report1(s)[2], 0)
+        self.assertEqual(self.report36(s)[23], 0x80)
+
     def test_high_low_button(self):
         s = self.new()
         self.scan(s, 1)

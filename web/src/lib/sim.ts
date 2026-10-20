@@ -4,9 +4,9 @@
 import type { Bus, InputReport, ShifterDevice } from './hid'
 import { findOpenShiftVersion } from './image'
 import {
-  APP_MAX, BTN_SHIFT_DOWN, BTN_SHIFT_UP, CHUNK, CHUNK_GAP_MS, CMD_BALANCE, CMD_BOOT, CMD_CALIBRATE, CMD_COLOR, CMD_DONE, CMD_ERASE,
-  CMD_GAMMA, CMD_HIGHLOW, CMD_LED, CMD_LOGO, CMD_WRITE, DEFAULT_COLOR, DEFAULT_GAINS, ERASE_WAIT_MS,
-  MODE_H, MODE_SEQ, OPT_GAMMA, OPT_LOGO, OPT_PRESENT, OPT_RANGE_ON, OPT_RANGE_TOGGLE, PID_APP, PID_BOOT,
+  APP_MAX, BTN_NEUTRAL, BTN_SHIFT_DOWN, BTN_SHIFT_UP, CHUNK, CHUNK_GAP_MS, CMD_BALANCE, CMD_BOOT, CMD_CALIBRATE, CMD_COLOR, CMD_DONE, CMD_ERASE,
+  CMD_GAMMA, CMD_HIGHLOW, CMD_LED, CMD_LOGO, CMD_NEUTRAL, CMD_WRITE, DEFAULT_COLOR, DEFAULT_GAINS, ERASE_WAIT_MS,
+  MODE_H, MODE_SEQ, OPT_GAMMA, OPT_LOGO, OPT_NEUTRAL, OPT_PRESENT, OPT_RANGE_ON, OPT_RANGE_TOGGLE, PID_APP, PID_BOOT,
   REPORT_ID, REPORT_LEN, VERSION_REPORT_ID, compareVersions, type Point, type RGB,
 } from './protocol'
 
@@ -86,6 +86,7 @@ export class SimShifter {
   highlowToggle = false
   highlowOn = false
   gamma = false
+  neutralButton = false
   switchH = true
   lever: Point = POSES.neutral
   radius = RADIUS.neutral
@@ -241,6 +242,7 @@ export class SimShifter {
       case CMD_HIGHLOW: this.highlowToggle = a !== 0; this.highlowOn = false; break
       case CMD_BALANCE: this.gains = [a, b, c]; void e; break
       case CMD_GAMMA: this.gamma = a !== 0; break
+      case CMD_NEUTRAL: if (compareVersions(this.version!, '0.4.1') >= 0) this.neutralButton = a !== 0; break
     }
   }
 
@@ -258,6 +260,7 @@ export class SimShifter {
     this.logo = true
     this.highlowToggle = false
     this.gamma = false
+    this.neutralButton = false
     this.gears = this.gears.map(() => [0, 0] as Point)
     this.neutral = [0, 0]
     this.handbrake = [0, 0]
@@ -289,7 +292,8 @@ export class SimShifter {
     r[48] = Math.min(255, Math.round(this.radius / 8))
     if (this.isOpenShift) {
       r[23] = OPT_PRESENT | (this.logo ? OPT_LOGO : 0) | (this.highlowToggle ? OPT_RANGE_TOGGLE : 0) |
-        (this.highlowOn ? OPT_RANGE_ON : 0) | (this.gamma ? OPT_GAMMA : 0)
+        (this.highlowOn ? OPT_RANGE_ON : 0) | (this.gamma ? OPT_GAMMA : 0) |
+        (this.neutralButton ? OPT_NEUTRAL : 0)
       r[24] = this.gains[0]
       r[53] = this.gains[1]
       r[54] = this.gains[2]
@@ -307,6 +311,7 @@ export class SimShifter {
     let buttons = 0
     if (this.mode === MODE_H) {
       POSES_GEARS.forEach(([gx, gy], k) => { if (Math.abs(x - gx) < 400 && Math.abs(y - gy) < 400) gears |= 1 << k })
+      if (this.neutralButton && !gears) buttons |= BTN_NEUTRAL
     } else {
       // The firmware's default thresholds, less its hysteresis. Pulled back
       // shifts up, pushed forward shifts down.

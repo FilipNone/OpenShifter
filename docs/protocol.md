@@ -30,7 +30,7 @@ Settings page, as 16-bit halfwords:
 | 0x2a to 0x36 | 13 auxiliary bytes (`24 23`) |
 | 0x37 to 0x3e | per-gear match radius |
 | 0x3f, 0x40 | sequential thresholds in y: lever pushed forward (positive), pulled back (negative) |
-| 0x50 | OpenShift options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on |
+| 0x50 | OpenShift options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on, bit 4 neutral button on (0.4.1) |
 | 0x51 to 0x53 | OpenShift LED colour R, G, B |
 | 0x54 to 0x56 | OpenShift white balance gains R, G, B |
 | 0x63 | `0x1254` once calibration is complete |
@@ -38,7 +38,7 @@ Settings page, as 16-bit halfwords:
 Stock never reads or writes halfwords 0x41 to 0x62. OpenShift uses 0x50 to 0x56.
 Without the `0xA5` marker in halfword 0x50 they mean the defaults: logo off,
 high/low as a button, colour 255 182 78 (warm orange), gamma off, gains
-255 162 96. The marker is there
+255 162 96, neutral button off. The marker is there
 because the page can come back from an update as zeros, not only as `0xFFFF`:
 OpenShift 0.2.0 read a zeroed page as colour 0 0 0, which turned every LED off.
 
@@ -98,8 +98,8 @@ Joystick) and the input and output report IDs and sizes are the same as
 stock's. OpenShift 0.4.0 and newer add feature report 0x25 (below).
 
 In 0.4.0 the 12 button bits are buttons 1 to 12. From 0.4.1 they are buttons
-2 to 13, and the next bit (`buttons` bit 4) is button 1, reserved and always
-0, followed by 3 padding bits. Linux numbers buttons from 0, so gear 1 is
+2 to 13, and the next bit (`buttons` bit 4) is button 1, the neutral button,
+followed by 3 padding bits. Linux numbers buttons from 0, so gear 1 is
 button 1 there; Windows numbers from 1, so gear 1 is button 2. The report
 bytes did not change.
 
@@ -113,7 +113,9 @@ Input reports, sent every 2 ms:
     sources call them `seq_down` and `seq_up` the other way round.
     OpenShift adds bit 3, the handbrake button (B) while the switch is in
     H; its report descriptor declares more buttons than stock's 11 (see
-    above). Bits 4 to 7 are always 0.
+    above). OpenShift 0.4.1 adds bit 4, the neutral button: set in
+    H-pattern mode while no gear is engaged, when turned on with `24 35 1`.
+    Bits 5 to 7 are always 0.
     With high/low set to toggle, bit 2 is the latched state.
   - `hb_lo`, `hb_hi`: the 16-bit handbrake axis.
 - **ID 0x24, 64 bytes, status:**
@@ -127,7 +129,7 @@ Input reports, sent every 2 ms:
   | 13 + 6k | gear k+1 x, y, big-endian |
   | 17, 29, 30, 35, 36, 41, 42, 47 | per-gear radius / 8 |
   | 18 | flags: bit 0 button A, 1 button B, 2 switch in H, 3 handbrake mode, 4 lever pulled back, 5 lever pushed forward (the last two are `seq_down` and `seq_up` in the source) |
-  | 23 | OpenShift only (stock sends 0): bit 7 set, bit 0 logo LED on, bit 1 high/low is a toggle, bit 2 toggle is on, bit 3 gamma on |
+  | 23 | OpenShift only (stock sends 0): bit 7 set, bit 0 logo LED on, bit 1 high/low is a toggle, bit 2 toggle is on, bit 3 gamma on, bit 4 neutral button on |
   | 24, 53, 54 | OpenShift 0.3.0 and newer (stock sends 0): white balance gains R, G, B |
   | 48 | r / 8: the field strength at the sensor. With x and y it gives the lever's tilt, atan2(√(x² + y²) / 6.55, √(r² − (x² + y²) / 6.55²)) |
   | 59 to 62 | handbrake rest / pulled x |
@@ -153,6 +155,7 @@ OpenShift adds these (stock ignores them):
 | `24 32 v` | high/low button: 0 a plain button, 1 a toggle (starts off at power-up); saved |
 | `24 33 R G B s` | white balance: a gain per channel, 255 = full; saved when s is 1, live only when 0 |
 | `24 34 v` | gamma correction: 1 on, 0 off (default); saved |
+| `24 35 v` | neutral button (0.4.1 and newer): 1 on, 0 off (default); saved |
 | `24 3F n` | light only LED n of the chain (0 to 2) in white, to find which LED is which; `24 3F FF` ends it. Not saved |
 
 `tools/openshift_ctl.py` sends all of these.

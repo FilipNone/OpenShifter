@@ -9,6 +9,7 @@ OpenShift is free replacement firmware for the **Turtle Beach VelocityOne Multi-
 - Choose the colour of the LEDs, and turn the logo LED on or off.
 - Use the Handbrake button as a normal button while the switch is in H.
 - Make the High/low button a toggle if you like.
+- Get a neutral button, for games that stay in gear when you move the lever to neutral.
 - On Linux, games find the shifter as a joystick with no extra driver.
 - You can go back to the Turtle Beach firmware at any time.
 

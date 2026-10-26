@@ -1,4 +1,4 @@
-/* OpenShift: USB full-speed HID device. SPDX-License-Identifier: MIT
+/* OpenShifter: USB full-speed HID device. SPDX-License-Identifier: MIT
  *
  * Minimal driver for the STM32F1-style USB peripheral. The device and
  * configuration descriptors and the reports are the stock ones, so the
@@ -71,15 +71,15 @@ const uint8_t usb_report_desc[89] = {
 };
 
 /* Feature report 0x25: the firmware version, NUL padded. WebHID cannot read
- * iConfiguration, so this is how a browser tells OpenShift versions apart. */
+ * iConfiguration, so this is how a browser tells OpenShifter versions apart. */
 #define VERSION_REPORT_ID  0x25
 #define VERSION_REPORT_LEN 16
-_Static_assert(sizeof OPENSHIFT_VERSION - 1 < VERSION_REPORT_LEN,
+_Static_assert(sizeof OPENSHIFTER_VERSION - 1 < VERSION_REPORT_LEN,
                "version does not fit feature report 0x25");
 
 static unsigned version_report(uint8_t *out)
 {
-    static const char v[] = OPENSHIFT_VERSION;
+    static const char v[] = OPENSHIFTER_VERSION;
     out[0] = VERSION_REPORT_ID;
     for (unsigned i = 1; i < VERSION_REPORT_LEN; i++)
         out[i] = i - 1 < sizeof v - 1 ? (uint8_t)v[i - 1] : 0;
@@ -101,7 +101,7 @@ static const struct { const char *s; uint8_t n; } usb_strings[] = {
     USB_STR("VelocityOne Multi-Shift\0\0"),
     USB_STR("VelocityOne Multi-Shift\0\0"),
     USB_STR("TBRS004-20241224"),
-    USB_STR("OpenShift " OPENSHIFT_VERSION),
+    USB_STR("OpenShifter " OPENSHIFTER_VERSION),
 };
 
 /* ---- low level -------------------------------------------------------- */

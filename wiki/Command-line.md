@@ -8,7 +8,7 @@ cd OpenShifter
 ## Access without root (once)
 
 ```sh
-python3 tools/openshift_flash.py udev-rule | sudo tee /etc/udev/rules.d/70-openshift.rules
+python3 tools/openshifter_flash.py udev-rule | sudo tee /etc/udev/rules.d/70-openshifter.rules
 sudo udevadm control --reload-rules
 ```
 
@@ -16,11 +16,11 @@ Then unplug the shifter and plug it back in. Without the rule, run the commands 
 
 ## Install firmware
 
-Download the `openshift-….bin` file from the [latest release](https://github.com/FilipNone/OpenShifter/releases/latest) and use its name in the command below. Installing **erases your calibration and settings**.
+Download the `openshifter-….bin` file from the [latest release](https://github.com/FilipNone/OpenShifter/releases/latest) and use its name in the command below. Installing **erases your calibration and settings**. Firmware that is not from Turtle Beach may void the shifter's warranty, and OpenShifter comes with no warranty.
 
 ```sh
-python3 tools/openshift_flash.py info                        # which firmware is running (changes nothing)
-python3 tools/openshift_flash.py flash openshift-0.5.0.bin   # asks you to type "flash" first
+python3 tools/openshifter_flash.py info                          # which firmware is running (changes nothing)
+python3 tools/openshifter_flash.py flash openshifter-0.5.0.bin   # asks you to type "flash" first
 ```
 
 The same `flash` command puts the stock firmware back: give it `VelocityOneTuner_Shift_Firmware.bin` instead. If a flash stops halfway, run the same command again.
@@ -28,15 +28,15 @@ The same `flash` command puts the stock firmware back: give it `VelocityOneTuner
 ## Calibrate and change settings
 
 ```sh
-python3 tools/openshift_ctl.py calibrate                # guided: neutral, handbrake, gears 1 to 8
-python3 tools/openshift_ctl.py calibrate --sequential   # also the sequential thresholds
-python3 tools/openshift_ctl.py status                   # settings, mode, lever position
-python3 tools/openshift_ctl.py color 255 182 78         # or '#ff8000', or default
-python3 tools/openshift_ctl.py logo on                  # or off
-python3 tools/openshift_ctl.py highlow toggle           # or button
-python3 tools/openshift_ctl.py balance                  # white balance, guided
-python3 tools/openshift_ctl.py gamma on                 # or off
-python3 tools/openshift_ctl.py neutral on               # neutral button, or off
+python3 tools/openshifter_ctl.py calibrate                # guided: neutral, handbrake, gears 1 to 8
+python3 tools/openshifter_ctl.py calibrate --sequential   # also the sequential thresholds
+python3 tools/openshifter_ctl.py status                   # settings, mode, lever position
+python3 tools/openshifter_ctl.py color 255 182 78         # or '#ff8000', or default
+python3 tools/openshifter_ctl.py logo on                  # or off
+python3 tools/openshifter_ctl.py highlow toggle           # or button
+python3 tools/openshifter_ctl.py balance                  # white balance, guided
+python3 tools/openshifter_ctl.py gamma on                 # or off
+python3 tools/openshifter_ctl.py neutral on               # neutral button, or off
 ```
 
 After calibrating, unplug the shifter and plug it back in. `calibrate` and `status` also work with the stock firmware.

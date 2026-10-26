@@ -1,6 +1,6 @@
-/* OpenShift: settings page and bootloader hand-off. SPDX-License-Identifier: MIT */
-#ifndef OPENSHIFT_FLASH_H
-#define OPENSHIFT_FLASH_H
+/* OpenShifter: settings page and bootloader hand-off. SPDX-License-Identifier: MIT */
+#ifndef OPENSHIFTER_FLASH_H
+#define OPENSHIFTER_FLASH_H
 
 #include <stdint.h>
 #include "shifter.h"

@@ -82,7 +82,7 @@ export function applyAccent(c: RGB, root: HTMLElement = document.documentElement
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', t.accent)
 }
 
-const KEY = 'openshift.accent'
+const KEY = 'openshifter.accent'
 
 export function storedAccent(): RGB {
   try {

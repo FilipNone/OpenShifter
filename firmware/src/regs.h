@@ -1,6 +1,6 @@
-/* OpenShift: register map (STM32F103-compatible AIR32F103). SPDX-License-Identifier: MIT */
-#ifndef OPENSHIFT_REGS_H
-#define OPENSHIFT_REGS_H
+/* OpenShifter: register map (STM32F103-compatible AIR32F103). SPDX-License-Identifier: MIT */
+#ifndef OPENSHIFTER_REGS_H
+#define OPENSHIFTER_REGS_H
 
 #include <stdint.h>
 

@@ -278,7 +278,7 @@ WARM = led(255, 182, 78)
 
 
 class Options(CoreHelpers, unittest.TestCase):
-    """OpenShift settings: logo LED, colour, handbrake and high/low buttons."""
+    """OpenShifter settings: logo LED, colour, handbrake and high/low buttons."""
 
     def leds(self, s, asleep=0):
         out = ctypes.create_string_buffer(9)

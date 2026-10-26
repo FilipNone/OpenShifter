@@ -1,4 +1,4 @@
-# /etc/udev/rules.d/70-openshift.rules
+# /etc/udev/rules.d/70-openshifter.rules
 # VelocityOne Multi-Shift: application (7096) and vendor bootloader (7097).
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="10f5", ATTRS{idProduct}=="7096", TAG+="uaccess"
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="10f5", ATTRS{idProduct}=="7097", TAG+="uaccess"

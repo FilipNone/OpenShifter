@@ -1,4 +1,4 @@
-/* OpenShift: 3-axis magnetometer on a bit-banged SPI bus. SPDX-License-Identifier: MIT
+/* OpenShifter: 3-axis magnetometer on a bit-banged SPI bus. SPDX-License-Identifier: MIT
  *
  * Pins: CS PB12, SCK PB13, MISO PB14 (pull-up), MOSI PB15, sensor power PA7
  * (open drain, low = on). SPI mode 3, MSB first, as stock uses.

@@ -1,6 +1,6 @@
-/* OpenShift: USB full-speed HID device. SPDX-License-Identifier: MIT */
-#ifndef OPENSHIFT_USB_H
-#define OPENSHIFT_USB_H
+/* OpenShifter: USB full-speed HID device. SPDX-License-Identifier: MIT */
+#ifndef OPENSHIFTER_USB_H
+#define OPENSHIFTER_USB_H
 
 #include <stdint.h>
 

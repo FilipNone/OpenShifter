@@ -1,4 +1,4 @@
-/* OpenShift: the few libc/EABI helpers the compiler may call. SPDX-License-Identifier: MIT */
+/* OpenShifter: the few libc/EABI helpers the compiler may call. SPDX-License-Identifier: MIT */
 #include <stddef.h>
 #include <stdint.h>
 

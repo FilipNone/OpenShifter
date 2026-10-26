@@ -1,4 +1,4 @@
-/* OpenShift: vector table and reset. SPDX-License-Identifier: MIT
+/* OpenShifter: vector table and reset. SPDX-License-Identifier: MIT
  *
  * The vendor bootloader jumps here with its own peripherals, clocks and
  * interrupts possibly still live. Everything it may have left running is

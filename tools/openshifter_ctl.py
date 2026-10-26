@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-"""Configure and calibrate a VelocityOne Multi-Shift running OpenShift.
+"""Configure and calibrate a VelocityOne Multi-Shift running OpenShifter.
 
 Talks to the shifter through /dev/hidrawN with the same 64-byte output report
 (ID 0x24) that VelocityOne Tuner uses, and reads the 0x24 status report back
 to confirm each change. Settings are saved on the shifter. Status and
 calibration also work with the stock firmware; the LED and button settings
-need OpenShift 0.2.0 or newer, white balance and gamma 0.3.0 or newer, the
+need OpenShifter 0.2.0 or newer, white balance and gamma 0.3.0 or newer, the
 neutral button 0.5.0 or newer.
 
 Access to /dev/hidraw* needs root or the udev rule printed by
-`openshift_flash.py udev-rule`.
+`openshifter_flash.py udev-rule`.
 """
 import argparse
 import os
@@ -20,7 +20,7 @@ import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from openshift_flash import (PID_APP, FlashError, LinuxBus, PACKET,  # noqa: E402
+from openshifter_flash import (PID_APP, FlashError, LinuxBus, PACKET,  # noqa: E402
                              REPORT_ID, select_device)
 
 CMD_LED = 0x20          # live colour (Tuner); not saved
@@ -156,19 +156,19 @@ def open_shifter(bus, device=None, opener=open_hidraw) -> Shifter:
         fd = opener(info.path)
     except PermissionError:
         raise CtlError(f'no permission to open {info.path}: run as root or install the udev '
-                       f'rule (openshift_flash.py udev-rule)') from None
+                       f'rule (openshifter_flash.py udev-rule)') from None
     return Shifter(fd, info)
 
 
-def openshift_version(info):
-    m = re.match(r'OpenShift (\d+)\.(\d+)\.(\d+)', getattr(info, 'configuration', '') or '')
+def openshifter_version(info):
+    m = re.match(r'OpenShift(?:er)? (\d+)\.(\d+)\.(\d+)', getattr(info, 'configuration', '') or '')
     return tuple(int(v) for v in m.groups()) if m else None
 
 
 def need_options(sh: Shifter, version=(0, 2, 0)):
-    v = openshift_version(sh.info)
+    v = openshifter_version(sh.info)
     if v is None or v < version:
-        raise CtlError('this setting needs OpenShift {}.{}.{} or newer on the shifter '.format(*version) +
+        raise CtlError('this setting needs OpenShifter {}.{}.{} or newer on the shifter '.format(*version) +
                        f'(found: {getattr(sh.info, "firmware", "unknown")})')
 
 
@@ -212,10 +212,10 @@ def show_status(sh: Shifter, out=None):
         say(f'logo LED   {"on" if st.logo else "off"}', out)
         hl = 'toggle, ' + ('on' if st.highlow_on else 'off') if st.highlow_toggle else 'button'
         say(f'high/low   {hl}', out)
-        if (openshift_version(sh.info) or (0,)) >= (0, 3, 0):
+        if (openshifter_version(sh.info) or (0,)) >= (0, 3, 0):
             say('balance    R {} G {} B {}'.format(*st.gains), out)
             say(f'gamma      {"on" if st.gamma else "off"}', out)
-        if (openshift_version(sh.info) or (0,)) >= (0, 5, 0):
+        if (openshifter_version(sh.info) or (0,)) >= (0, 5, 0):
             say(f'neutral button {"on" if st.neutral_button else "off"}', out)
     say(f'lever      x={st.x} y={st.y}', out)
     say('calibration', out)

@@ -4,7 +4,7 @@ Firefox and the browsers built on it (Zen, LibreWolf, Floorp, Waterfox) cannot r
 
 ## Read this first
 
-- The add-on and its helper program are made by someone else. They have not been tested with OpenShift.
+- The add-on and its helper program are made by someone else. They have not been tested with OpenShifter.
 - **Firmware updates do not work in Firefox.** Use Firefox for calibration and settings only, and install firmware with Chrome, Edge or Opera. If you started an update in Firefox, the shifter waits in update mode: open the web tool in Chrome, Edge or Opera, connect the shifter and install again from the **Firmware** tab.
 - **Firefox shows an error when you change a setting.** This is normal: the setting still changes.
 - **On Linux and macOS, the helper does not ask which website may use it.** While it runs, any website you open could talk to your USB game controllers. Run it only while you use the web tool, then stop it.

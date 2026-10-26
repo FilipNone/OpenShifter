@@ -1,4 +1,4 @@
-"""Tests of tools/openshift_flash.py against a simulated shifter (no hardware)."""
+"""Tests of tools/openshifter_flash.py against a simulated shifter (no hardware)."""
 import contextlib
 import io
 import os
@@ -11,10 +11,10 @@ from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
-import openshift_flash as fl  # noqa: E402
+import openshifter_flash as fl  # noqa: E402
 
-OPENSHIFT_BIN = ROOT / 'firmware' / 'build' / 'openshift.bin'
-STOCK_BIN = pathlib.Path(os.environ.get('OPENSHIFT_STOCK_FW',
+OPENSHIFTER_BIN = ROOT / 'firmware' / 'build' / 'openshifter.bin'
+STOCK_BIN = pathlib.Path(os.environ.get('OPENSHIFTER_STOCK_FW',
                                         ROOT / 'firmware' / 'stock' / 'VelocityOneTuner_Shift_Firmware.bin'))
 # Report descriptor read from a stock unit (10f5:7096).
 STOCK_REPORT_DESCRIPTOR = bytes.fromhex(
@@ -22,11 +22,11 @@ STOCK_REPORT_DESCRIPTOR = bytes.fromhex(
     '0000751095018102c0a10185240901150026ff007508953f8106c0a10185240901150026ff007508953f9106c0c0')
 
 
-def fake_image(n=1000, version=b'9.9.9'):
-    """A plausible application: vector table, then filler and an OpenShift tag."""
+def fake_image(n=1000, version=b'9.9.9', name=b'OpenShifter'):
+    """A plausible application: vector table, then filler and an OpenShifter tag."""
     head = struct.pack('<4I', 0x20005000, fl.APP_BASE + 0x101, fl.APP_BASE + 0x103, fl.APP_BASE + 0x105)
     body = bytes((i * 7) & 0xFF for i in range(n - len(head)))
-    tag = b'OpenShift ' + version
+    tag = name + b' ' + version
     return head + body[:-len(tag)] + tag
 
 
@@ -55,13 +55,18 @@ class Images(unittest.TestCase):
     def test_fake_image_is_valid(self):
         img = fl.Image(fake_image())
         self.assertEqual(img.problems(), [])
-        self.assertEqual(img.openshift_version, '9.9.9')
+        self.assertEqual(img.openshifter_version, '9.9.9')
 
-    @unittest.skipUnless(OPENSHIFT_BIN.exists(), 'firmware not built')
-    def test_openshift_build(self):
-        img = fl.Image(OPENSHIFT_BIN.read_bytes())
+    def test_builds_from_before_the_rename(self):
+        img = fl.Image(fake_image(name=b'OpenShift', version=b'0.5.0'))
+        self.assertEqual((img.openshifter_version, img.mark), ('0.5.0', 'OpenShift 0.5.0'))
+        self.assertTrue(img.known)
+
+    @unittest.skipUnless(OPENSHIFTER_BIN.exists(), 'firmware not built')
+    def test_openshifter_build(self):
+        img = fl.Image(OPENSHIFTER_BIN.read_bytes())
         self.assertEqual(img.problems(), [])
-        self.assertTrue(img.openshift_version)
+        self.assertTrue(img.openshifter_version)
 
     @unittest.skipUnless(STOCK_BIN.exists(), 'stock image not available')
     def test_stock_image(self):
@@ -87,7 +92,7 @@ class Images(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             p = os.path.join(d, 'other.bin')
             with open(p, 'wb') as f:
-                f.write(fake_image().replace(b'OpenShift', b'Something'))
+                f.write(fake_image().replace(b'OpenShifter', b'Something'))
             with quiet(), contextlib.redirect_stderr(io.StringIO()):
                 self.assertEqual(fl.main(['check', p]), 2)
                 self.assertEqual(fl.main(['check', '--allow-foreign', p]), 0)
@@ -103,7 +108,7 @@ class FlashSimulated(unittest.TestCase):
         self.assertEqual(sim.violations, [])
         self.assertEqual(sim.application(len(img.data)), img.data)
         self.assertEqual(sim.flash[len(img.data):], b'\xff' * (fl.APP_MAX - len(img.data)))
-        self.assertEqual(app.configuration, 'OpenShift 9.9.9')
+        self.assertEqual(app.configuration, 'OpenShifter 9.9.9')
         cmds = [c for _, c in sim.log]
         n = fl.chunk_count(len(img.data))
         self.assertEqual(cmds, [fl.CMD_BOOT, fl.CMD_ERASE] + [fl.CMD_WRITE] * n + [fl.CMD_DONE])
@@ -111,6 +116,14 @@ class FlashSimulated(unittest.TestCase):
         t = [t for t, _ in sim.log]
         self.assertGreaterEqual(t[2] - t[1], fl.ERASE_WAIT_S)
         self.assertGreaterEqual(min(b - a for a, b in zip(t[2:], t[3:])), fl.CHUNK_GAP_S - 1e-9)
+
+    def test_reinstalls_a_build_from_before_the_rename(self):
+        img = fl.Image(fake_image(5000, b'0.4.0', b'OpenShift'))
+        sim = fl.SimShifter(b'old firmware')
+        with quiet():
+            app = fl.flash(sim, img)
+        self.assertEqual(app.configuration, 'OpenShift 0.4.0')
+        self.assertEqual(app.firmware, 'OpenShift 0.4.0')
 
     def test_starts_directly_in_bootloader_mode(self):
         img = fl.Image(fake_image())
@@ -127,7 +140,7 @@ class FlashSimulated(unittest.TestCase):
         with quiet():
             app = fl.flash(sim, img)
         self.assertEqual(sim.application(len(img.data)), img.data)
-        self.assertEqual(app.firmware, 'stock (no OpenShift identification)')
+        self.assertEqual(app.firmware, 'stock (no OpenShifter identification)')
 
     def test_interrupted_update_can_be_retried(self):
         img = fl.Image(fake_image(3000))
@@ -222,10 +235,10 @@ class Sysfs(unittest.TestCase):
 
     def test_finds_the_shifter(self):
         with tempfile.TemporaryDirectory() as d:
-            bus = fl.LinuxBus(self.make_tree(d, 0x7096, 'OpenShift 0.1.0'))
+            bus = fl.LinuxBus(self.make_tree(d, 0x7096, 'OpenShifter 0.1.0'))
             (dev,) = bus.devices()
         self.assertEqual((dev.path, dev.pid, dev.mode), ('/dev/hidraw3', 0x7096, 'application'))
-        self.assertEqual(dev.firmware, 'OpenShift 0.1.0')
+        self.assertEqual(dev.firmware, 'OpenShifter 0.1.0')
         self.assertEqual(dev.serial, 'TBRS004-20241224')
         self.assertTrue(dev.has_output_report(0x24))
         self.assertFalse(dev.has_output_report(0x01))
@@ -233,7 +246,7 @@ class Sysfs(unittest.TestCase):
     def test_stock_and_bootloader(self):
         with tempfile.TemporaryDirectory() as d:
             (dev,) = fl.LinuxBus(self.make_tree(d, 0x7096, '')).devices()
-            self.assertEqual(dev.firmware, 'stock (no OpenShift identification)')
+            self.assertEqual(dev.firmware, 'stock (no OpenShifter identification)')
         with tempfile.TemporaryDirectory() as d:
             (dev,) = fl.LinuxBus(self.make_tree(d, 0x7097, '', rd=b'')).devices()
             self.assertEqual(dev.mode, 'bootloader')

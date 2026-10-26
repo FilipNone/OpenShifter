@@ -4,12 +4,12 @@
 import { POSES, RADIUS, SimShifter, UNLOCK, realClock } from './sim'
 import type { Point } from './protocol'
 
-export type DemoStart = 'openshift' | 'stock' | 'update'
+export type DemoStart = 'openshifter' | 'stock' | 'update'
 
 export function demoStart(search: string): DemoStart | null {
   const v = new URLSearchParams(search).get('demo')
   if (v === null) return null
-  return v === 'stock' || v === 'update' ? v : 'openshift'
+  return v === 'stock' || v === 'update' ? v : 'openshifter'
 }
 
 const AUTO = ['neutral', 'gear1', 'neutral', 'gear2', 'neutral', 'gear3', 'neutral', 'gear4', 'neutral', 'gear5',
@@ -27,7 +27,7 @@ export class Demo {
   private run = 0
 
   constructor(start: DemoStart) {
-    const fw = start === 'openshift' ? new TextEncoder().encode('\0OpenShift 0.5.0\0') : null
+    const fw = start === 'openshifter' ? new TextEncoder().encode('\0OpenShifter 0.5.0\0') : null
     this.sim = new SimShifter({ firmware: fw, clock: realClock, bootMode: start === 'update' })
     const g: Point[] = [1, 2, 3, 4, 5, 6, 7, 8].map((k) => {
       const [x, y] = POSES[`gear${k}`]

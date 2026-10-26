@@ -1,6 +1,6 @@
 """Behavioural STM32F103/AIR32F103 model for running shifter firmware images.
 
-Runs an unmodified application image (stock or OpenShift) under Unicorn with
+Runs an unmodified application image (stock or OpenShifter) under Unicorn with
 models of the peripherals the shifter uses, so both images can be driven with
 the same simulated magnet, buttons and USB host and their outputs compared.
 

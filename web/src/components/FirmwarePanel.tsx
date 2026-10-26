@@ -163,15 +163,15 @@ export function FirmwarePanel({ bus, device, firmware, onBeforeFlash, onFlashed,
       onClose={() => { if (run.state === 'failed') onFlashed(null); setRun({ state: 'idle' }) }} onCalibrate={onCalibrate} />
   }
 
-  const target = image?.openshiftVersion
-  const current = firmware?.kind === 'openshift' ? firmware.version : null
+  const target = image?.openshifterVersion
+  const current = firmware?.kind === 'openshifter' ? firmware.version : null
   const action = !image ? 'Install' :
     firmware?.kind === 'bootloader' ? 'Install and finish the update' :
     !target ? (image.stock ? 'Install stock firmware' : 'Install this image') :
-    firmware?.kind === 'stock' ? `Install OpenShift ${target}` :
-    current && compareVersions(target, current) === 0 ? `Reinstall OpenShift ${target}` :
-    current && compareVersions(target, current) < 0 ? `Install older OpenShift ${target}` :
-    `Update to OpenShift ${target}`
+    firmware?.kind === 'stock' ? `Install OpenShifter ${target}` :
+    current && compareVersions(target, current) === 0 ? `Reinstall OpenShifter ${target}` :
+    current && compareVersions(target, current) < 0 ? `Install older OpenShifter ${target}` :
+    `Update to OpenShifter ${target}`
 
   return (
     <div className="space-y-6">
@@ -182,7 +182,7 @@ export function FirmwarePanel({ bus, device, firmware, onBeforeFlash, onFlashed,
       )}
       <Section title="Firmware" description={<>Running now: <span className="font-medium text-zinc-950 dark:text-white">{firmwareLabel(firmware)}</span></>}>
         <RadioGroup value={source} onChange={setSource} aria-label="Firmware to install" className="grid gap-3 sm:grid-cols-2">
-          <Choice value="bundled" disabled={bundled.state !== 'ready'} title={bundled.state === 'ready' ? `OpenShift ${bundled.image.openshiftVersion}` : 'OpenShift'}
+          <Choice value="bundled" disabled={bundled.state !== 'ready'} title={bundled.state === 'ready' ? `OpenShifter ${bundled.image.openshifterVersion}` : 'OpenShifter'}
             text={bundled.state === 'ready' ? `The file from release ${bundled.tag} on GitHub, checked against its SHA-256.` :
               bundled.state === 'loading' ? 'Loading…' : `Unavailable: ${bundled.reason}.`} />
           <Choice value="file" title="A file on this computer" text="A .bin image, for example a stock image from VelocityOne Tuner, to go back to stock." />
@@ -213,7 +213,7 @@ export function FirmwarePanel({ bus, device, firmware, onBeforeFlash, onFlashed,
               <CheckIcon className="hidden size-4 fill-led-ink group-data-[checked]:block" />
             </Checkbox>
             <Label className="text-sm/6">
-              This image is neither OpenShift nor a known stock release. I understand it may not start, and that the
+              This image is neither OpenShifter nor a known stock release. I understand it may not start, and that the
               shifter would then need another update from update mode.
             </Label>
           </Field>
@@ -235,6 +235,8 @@ export function FirmwarePanel({ bus, device, firmware, onBeforeFlash, onFlashed,
             <DialogTitle className="text-base/7 font-semibold">{action}?</DialogTitle>
             <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm/6 text-zinc-700 dark:text-zinc-300">
               <li>The calibration, LED colour and button settings are erased. You calibrate again afterwards.</li>
+              {!image?.stock && <li>Firmware that is not from Turtle Beach may void the shifter's warranty. OpenShifter comes
+                with no warranty: you install it at your own risk.</li>}
               {device.productId === PID_APP && <li>The browser asks for permission once more, for the shifter in update mode.</li>}
               <li>Keep the shifter plugged in and this tab in front. If the update stops, the shifter stays in update mode and you can start again.</li>
             </ul>
@@ -300,7 +302,7 @@ function RunView({ run, headingRef, bootMode, onAllow, onStop, onClose, onCalibr
       {run.state === 'done' && (
         <div className="space-y-4">
           <h3 ref={headingRef} tabIndex={-1} className="sr-only focus:outline-none">Update finished</h3>
-          <Notice tone="success" title={run.version ? `OpenShift ${run.version} is running` : `${kind(run.image)} is installed`}>
+          <Notice tone="success" title={run.version ? `OpenShifter ${run.version} is running` : `${kind(run.image)} is installed`}>
             <p>The calibration and settings were reset. Calibrate the shifter now.</p>
           </Notice>
           <div className="flex flex-wrap gap-3">

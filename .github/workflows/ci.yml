@@ -52,10 +52,10 @@ jobs:
       - name: Upload firmware image
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: openshift-firmware
+          name: openshifter-firmware
           path: |
-            firmware/build/openshift.bin
-            firmware/build/openshift.elf
+            firmware/build/openshifter.bin
+            firmware/build/openshifter.elf
 
   web:
     name: Web tool

@@ -1,4 +1,4 @@
-"""Tests of tools/openshift_ctl.py against the real shifter core.
+"""Tests of tools/openshifter_ctl.py against the real shifter core.
 
 A thread plays the shifter: it runs firmware/src/shifter.c (built by
 test_shifter.py) with a simulated lever, buttons and switch, sends 0x24
@@ -18,8 +18,8 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'tests'))
-import openshift_ctl as ctl  # noqa: E402
-import openshift_flash as fl  # noqa: E402
+import openshifter_ctl as ctl  # noqa: E402
+import openshifter_flash as fl  # noqa: E402
 import test_shifter as ts  # noqa: E402
 
 
@@ -108,7 +108,7 @@ class Device(threading.Thread):
 
 
 class Bus:
-    def __init__(self, configuration='OpenShift 0.3.0', pid=fl.PID_APP):
+    def __init__(self, configuration='OpenShifter 0.3.0', pid=fl.PID_APP):
         self.info = fl.DeviceInfo('/dev/hidraw7', pid, configuration=configuration)
 
     def devices(self):
@@ -160,7 +160,7 @@ class CommandLine(unittest.TestCase):
     def test_status(self):
         rc, out, err = self.run_ctl('status')
         self.assertEqual(rc, 0, err)
-        self.assertIn('OpenShift 0.3.0', out)
+        self.assertIn('OpenShifter 0.3.0', out)
         self.assertIn('balance    R 255 G 162 B 96', out)
         self.assertIn('gamma      off', out)
         self.assertIn('colour     255 182 78 (#ffb64e)', out)
@@ -200,12 +200,14 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(self.dev.settings()[0x50] & 0x08, 0x08)
         self.assertEqual(self.run_ctl('gamma', 'off')[0], 0)
         self.assertEqual(self.dev.settings()[0x50] & 0x08, 0)
-        rc, _, err = self.run_ctl('balance', 'default', bus=Bus('OpenShift 0.2.1'))
+        rc, _, err = self.run_ctl('balance', 'default', bus=Bus('OpenShifter 0.2.1'))
         self.assertEqual(rc, 2)
         self.assertIn('0.3.0 or newer', err)
+        # Builds from before the rename report "OpenShift x.y.z".
+        self.assertEqual(self.run_ctl('balance', 'default', bus=Bus('OpenShift 0.4.0'))[0], 0)
 
     def test_neutral(self):
-        new = Bus('OpenShift 0.5.0')
+        new = Bus('OpenShifter 0.5.0')
         rc, out, err = self.run_ctl('status', bus=new)
         self.assertEqual(rc, 0, err)
         self.assertIn('neutral button off', out)
@@ -238,13 +240,13 @@ class CommandLine(unittest.TestCase):
         self.dev.settle()
         self.assertEqual(self.dev.settings()[0x54:0x57], [255, 166, 56])
 
-    def test_needs_openshift_0_2(self):
-        for conf in ('', 'OpenShift 0.1.0'):
+    def test_needs_openshifter_0_2(self):
+        for conf in ('', 'OpenShifter 0.1.0'):
             rc, _, err = self.run_ctl('logo', 'on', bus=Bus(conf))
             self.assertEqual(rc, 2)
             self.assertIn('0.2.0 or newer', err)
         self.assertEqual(self.dev.received, [])
-        # Status still works, without the OpenShift lines.
+        # Status still works, without the OpenShifter lines.
         rc, out, _ = self.run_ctl('status', bus=Bus(''))
         self.assertEqual(rc, 0)
         self.assertIn('calibration', out)

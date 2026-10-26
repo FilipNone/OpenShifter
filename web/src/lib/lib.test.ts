@@ -6,7 +6,7 @@ import { accentTokens, contrast, parseHex } from './color'
 import { FlashError, flash, writeForm, type Stage } from './flash'
 import { orientation, slot, tilt, toGate, toSequential } from './gate'
 import type { ShifterDevice } from './hid'
-import { findOpenShiftVersion, loadImage, problems } from './image'
+import { findOpenShifterVersion, loadImage, problems } from './image'
 import {
   BTN_NEUTRAL, CHUNK, CMD_NEUTRAL, DEFAULT_COLOR, PID_APP, PID_BOOT, REPORT_ID, Status, chunk, chunkCount, command,
   compareVersions, engagedGear, parseVersion,
@@ -14,10 +14,10 @@ import {
 import { POSES, SimShifter, type SimOptions } from './sim'
 import { UDEV_RULE } from './udev'
 
-const BIN = join(__dirname, '..', '..', '..', 'firmware', 'build', 'openshift.bin')
+const BIN = join(__dirname, '..', '..', '..', 'firmware', 'build', 'openshifter.bin')
 
 /** A minimal image that passes the vector checks. */
-function fakeImage(n = 3000, mark = 'OpenShift 9.8.7'): Uint8Array {
+function fakeImage(n = 3000, mark = 'OpenShifter 9.8.7'): Uint8Array {
   const d = new Uint8Array(n).fill(0x5a)
   const v = new DataView(d.buffer)
   v.setUint32(0, 0x20005000, true)
@@ -92,7 +92,7 @@ describe('protocol', () => {
 
   it('turns the neutral button on from 0.5.0', async () => {
     const neutralOn = async (version: string) => {
-      const sim = new SimShifter({ firmware: fakeImage(4000, `OpenShift ${version}`) })
+      const sim = new SimShifter({ firmware: fakeImage(4000, `OpenShifter ${version}`) })
       const dev = (await sim.bus().devices())[0]
       await dev.open()
       await dev.sendReport(REPORT_ID, command(CMD_NEUTRAL, 1))
@@ -114,8 +114,13 @@ describe('image checks', () => {
   it('accepts a well-formed image and reads its version', async () => {
     const img = await loadImage(fakeImage(), 'x.bin')
     expect(img.problems).toEqual([])
-    expect(img.openshiftVersion).toBe('9.8.7')
+    expect(img.openshifterVersion).toBe('9.8.7')
     expect(img.sha256).toMatch(/^[0-9a-f]{64}$/)
+  })
+
+  it('reads the version of builds from before the rename', () => {
+    expect(findOpenShifterVersion(fakeImage(3000, 'OpenShift 0.5.0'))).toBe('0.5.0')
+    expect(findOpenShifterVersion(fakeImage(3000, 'OpenShifts 0.5.0'))).toBeNull()
   })
 
   it('rejects images that cannot run at 0x08010000', () => {
@@ -133,10 +138,10 @@ describe('image checks', () => {
   })
 
   it.skipIf(!existsSync(BIN))('accepts the firmware build', async () => {
-    const img = await loadImage(new Uint8Array(readFileSync(BIN)), 'openshift.bin')
+    const img = await loadImage(new Uint8Array(readFileSync(BIN)), 'openshifter.bin')
     expect(img.problems).toEqual([])
-    expect(img.openshiftVersion).toMatch(/^\d+\.\d+\.\d+/)
-    expect(findOpenShiftVersion(new Uint8Array(4))).toBeNull()
+    expect(img.openshifterVersion).toMatch(/^\d+\.\d+\.\d+/)
+    expect(findOpenShifterVersion(new Uint8Array(4))).toBeNull()
   })
 })
 
@@ -195,7 +200,7 @@ describe('gate drawing', () => {
 
 describe('udev rule', () => {
   it('matches the one the flasher prints', () => {
-    const py = readFileSync(join(__dirname, '..', '..', '..', 'tools', 'openshift_flash.py'), 'utf8')
+    const py = readFileSync(join(__dirname, '..', '..', '..', 'tools', 'openshifter_flash.py'), 'utf8')
     const m = /UDEV_RULE = """\\\n([\s\S]*?)"""/.exec(py)
     expect(m?.[1]).toBe(UDEV_RULE)
   })
@@ -217,7 +222,7 @@ describe('accent colour', () => {
 })
 
 async function runFlash(o: SimOptions, data = fakeImage(), extra: { cancelBoot?: boolean; ignoreApp?: boolean } = {}) {
-  const sim = new SimShifter({ firmware: fakeImage(4000, 'OpenShift 0.3.2'), ...o })
+  const sim = new SimShifter({ firmware: fakeImage(4000, 'OpenShifter 0.3.2'), ...o })
   const bus = sim.bus()
   const device = (await bus.devices())[0] ?? (await bus.request([PID_APP, PID_BOOT]))!
   const stages: Stage[] = []
@@ -291,8 +296,8 @@ describe('flash', () => {
     expect(r.sim.version).toBe('0.3.2')
   })
 
-  it('checks the version an OpenShift 0.4+ image reports after the restart', async () => {
-    const ok = await runFlash({ bootGranted: true }, fakeImage(3000, 'OpenShift 0.4.0'))
+  it('checks the version an OpenShifter 0.4+ image reports after the restart', async () => {
+    const ok = await runFlash({ bootGranted: true }, fakeImage(3000, 'OpenShifter 0.4.0'))
     expect(ok.result).toMatchObject({ version: '0.4.0' })
   })
 

@@ -1,4 +1,4 @@
-/* OpenShift: open firmware for the Turtle Beach VelocityOne Multi-Shift.
+/* OpenShifter: open firmware for the Turtle Beach VelocityOne Multi-Shift.
  * SPDX-License-Identifier: MIT
  *
  * Execution model:

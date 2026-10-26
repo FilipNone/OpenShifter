@@ -20,8 +20,10 @@ Free replacement firmware for the **Turtle Beach VelocityOne Multi-Shift**, inst
 You need any Chromium based browser (Chrome, Edge, Opera...) on a computer.
 
 1. Open the [web tool](https://filipnone.github.io/OpenShifter/) and connect the shifter.
-2. Install OpenShift from the **Firmware** tab. This erases your calibration.
+2. Install OpenShifter from the **Firmware** tab. This erases your calibration.
 3. Calibrate in the **Calibration** tab.
+
+Firmware that is not from Turtle Beach may void the shifter's warranty. OpenShifter comes with no warranty: you install it at your own risk.
 
 Step by step: [Install](https://github.com/FilipNone/OpenShifter/wiki/Install) · From a terminal: [Command line](https://github.com/FilipNone/OpenShifter/wiki/Command-line) · Problems: [Troubleshooting](https://github.com/FilipNone/OpenShifter/wiki/Troubleshooting)
 
@@ -39,14 +41,14 @@ Firefox cannot reach USB devices by itself. The third-party add-on [WebHID for F
 ## Development
 
 ```sh
-make -C firmware          # firmware/build/openshift.bin (needs clang and lld 15+)
+make -C firmware          # firmware/build/openshifter.bin (needs clang and lld 15+)
 make -C firmware test     # all tests (pip install -r requirements-dev.txt first)
 cd web && npm ci && npm run dev   # web tool on http://localhost:5173/
 ```
 
 The web tool offers the firmware file from the latest release, checked against
 the release's `SHA256SUMS`. To try a local build, choose **A file on this
-computer** and pick `firmware/build/openshift.bin`.
+computer** and pick `firmware/build/openshifter.bin`.
 
 | Folder | Contents |
 |---|---|
@@ -59,4 +61,6 @@ computer** and pick `firmware/build/openshift.bin`.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). OpenShift is not made or endorsed by Turtle Beach.
+MIT, see [LICENSE](LICENSE). OpenShifter comes with no warranty.
+
+OpenShifter is not made or endorsed by Turtle Beach. Turtle Beach and VelocityOne are trademarks of Turtle Beach Corporation, used here only to name the shifter this firmware runs on. This repository and the web tool contain no Turtle Beach firmware or software: to go back to stock you use the image that comes with VelocityOne Tuner.

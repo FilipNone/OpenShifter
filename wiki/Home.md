@@ -1,4 +1,4 @@
-OpenShift is free replacement firmware for the **Turtle Beach VelocityOne Multi-Shift**. You install it from your browser.
+OpenShifter is free replacement firmware for the **Turtle Beach VelocityOne Multi-Shift**. You install it from your browser.
 
 **[Open the web tool](https://filipnone.github.io/OpenShifter/)**
 
@@ -17,9 +17,11 @@ OpenShift is free replacement firmware for the **Turtle Beach VelocityOne Multi-
 
 | Step | Page |
 |---|---|
-| 1. Install OpenShift | [Install](Install) |
+| 1. Install OpenShifter | [Install](Install) |
 | 2. Calibrate the lever | [Calibrate](Calibrate) |
 | 3. Pick your colours (optional) | [Settings](Settings) |
+
+Installing OpenShifter may void the shifter's warranty. It comes with no warranty of its own.
 
 You need the shifter, its USB cable and a computer with **Chrome, Edge or Opera**. Safari and phones do not work. Firefox needs an add-on: see [Firefox](Firefox).
 

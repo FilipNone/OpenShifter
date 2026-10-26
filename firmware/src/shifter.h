@@ -1,4 +1,4 @@
-/* OpenShift: open firmware for the Turtle Beach VelocityOne Multi-Shift.
+/* OpenShifter: open firmware for the Turtle Beach VelocityOne Multi-Shift.
  * SPDX-License-Identifier: MIT
  *
  * Portable shifter logic: sensor frame -> position -> gear/sequential/handbrake
@@ -6,12 +6,12 @@
  * encoding. No hardware access; the same file is compiled for the MCU and for
  * the host tests.
  *
- * The starting point was the behaviour of the stock application
- * (VelocityOneTuner_Shift_Firmware.bin, sha256 96da5e6b...c0d1), worked out
- * from its disassembly; no stock code is copied.
+ * The behaviour matches the stock application where the host can see it, so
+ * that the calibration, the settings page and Tuner keep working. No stock
+ * code is copied.
  */
-#ifndef OPENSHIFT_SHIFTER_H
-#define OPENSHIFT_SHIFTER_H
+#ifndef OPENSHIFTER_SHIFTER_H
+#define OPENSHIFTER_SHIFTER_H
 
 #include <stdint.h>
 
@@ -22,7 +22,7 @@
 #define SH_SETTINGS_HALFWORDS 100       /* stock settings block size */
 #define SH_SETTINGS_MAGIC     0x1254u   /* halfword at byte offset 0xc6 */
 
-/* OpenShift settings, in halfwords stock never uses. They count only when
+/* OpenShifter settings, in halfwords stock never uses. They count only when
  * the high byte of SH_ST_FLAGS is SH_ST_MARK: the page can come back from an
  * update erased (0xFFFF) or zeroed, and both mean the defaults. */
 #define SH_ST_FLAGS   0x50            /* SH_ST_MARK << 8 | SH_OPT_* bits */
@@ -128,7 +128,7 @@ typedef struct {
     uint16_t a_count, b_count;
     uint16_t a_thr, b_thr;   /* 1 scan */
 
-    /* --- OpenShift additions --- */
+    /* --- OpenShifter additions --- */
     uint8_t  options;        /* SH_OPT_* */
     uint8_t  color[3];       /* saved LED colour; led_rgb is the live one */
     uint8_t  gain[3];        /* white balance per channel, 255 = full */

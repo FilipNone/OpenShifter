@@ -115,7 +115,7 @@ export default function App() {
     if (kindNow === fwKind) return
     setFwKind(kindNow)
     if (kindNow === 'stock' || kindNow === 'bootloader') setTab(2)
-    else if (kindNow === 'openshift') setTab(0)
+    else if (kindNow === 'openshifter') setTab(0)
   }, [kindNow, fwKind, session])
 
   const choose = async () => {
@@ -178,7 +178,7 @@ export default function App() {
             <span aria-hidden className="relative flex size-7 items-center justify-center rounded-lg bg-zinc-950 dark:bg-white/10">
               <span className="size-3 rounded-full bg-led shadow-[0_0_10px_2px_var(--led)]" />
             </span>
-            <span className="text-base/7 font-semibold tracking-tight">OpenShift</span>
+            <span className="text-base/7 font-semibold tracking-tight">OpenShifter</span>
           </a>
           <div className="flex items-center gap-2 sm:gap-3">
             {session && (
@@ -242,7 +242,10 @@ export default function App() {
 
       <footer className="border-t border-zinc-950/5 dark:border-white/10">
         <div className="mx-auto flex max-w-6xl flex-wrap justify-between gap-2 px-4 py-6 text-sm/6 text-zinc-600 sm:px-6 dark:text-zinc-400">
-          <p>OpenShift is MIT licensed. It is not made or endorsed by Turtle Beach.</p>
+          <p>OpenShifter is MIT licensed and comes with no warranty. It is not made or endorsed by Turtle Beach.</p>
+          <a href="THIRD-PARTY-LICENSES.txt" className="underline decoration-zinc-950/20 underline-offset-4 hover:decoration-zinc-950/50 dark:decoration-white/20 dark:hover:decoration-white/50">
+            Third-party licenses</a>
+          <p className="w-full">Turtle Beach and VelocityOne are trademarks of Turtle Beach Corporation.</p>
         </div>
       </footer>
     </div>

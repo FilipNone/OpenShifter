@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // An open shifter in application mode: the latest status and inputs, and
-// commands that are checked against a fresh status, as in openshift_ctl.py.
+// commands that are checked against a fresh status, as in openshifter_ctl.py.
 import type { InputReport, ShifterDevice } from './hid'
 import { readVersion } from './flash'
 import { PID_BOOT, REPORT_ID, Status, command, compareVersions, parseInputs, type Inputs, type Lever } from './protocol'
@@ -9,7 +9,7 @@ export type Firmware =
   | { kind: 'bootloader' }
   | { kind: 'stock' }
   /** `version` is exact from 0.4.0 on; older builds only show what they support. */
-  | { kind: 'openshift'; version: string | null; balance: boolean; neutral: boolean }
+  | { kind: 'openshifter'; version: string | null; balance: boolean; neutral: boolean }
 
 export class SessionError extends Error {}
 
@@ -76,7 +76,7 @@ export class Session {
     if (!st.hasOptions) return { kind: 'stock' }
     const balance = this.version !== null || st.gains.some((g) => g !== 0)
     const neutral = this.version !== null && compareVersions(this.version, '0.5.0') >= 0
-    return { kind: 'openshift', version: this.version, balance, neutral }
+    return { kind: 'openshifter', version: this.version, balance, neutral }
   }
 
   nextStatus(timeoutMs = 1000): Promise<Status> {

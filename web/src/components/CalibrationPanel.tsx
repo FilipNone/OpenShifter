@@ -59,7 +59,7 @@ export function CalibrationPanel({ session, status }: { session: Session; status
 
   if (!started) {
     return (
-      <Section title="Calibration" description="Teaches the shifter where neutral, the handbrake and each gear are. It works with stock firmware and OpenShift.">
+      <Section title="Calibration" description="Teaches the shifter where neutral, the handbrake and each gear are. It works with stock firmware and OpenShifter.">
         <ul className="max-w-prose list-disc space-y-1 pl-5 text-sm/6 text-zinc-700 dark:text-zinc-300">
           <li>Each step records the lever where it is when you press Record.</li>
           <li>Neutral and handbrake come first, the gears last, as in VelocityOne Tuner.</li>

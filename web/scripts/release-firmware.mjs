@@ -14,7 +14,7 @@ const out = join(web, 'public', 'firmware')
 const repo = process.env.GITHUB_REPOSITORY || 'FilipNone/OpenShifter'
 
 async function get(url, headers = {}) {
-  const r = await fetch(url, { headers: { 'user-agent': 'openshift-web', ...headers } })
+  const r = await fetch(url, { headers: { 'user-agent': 'openshifter-web', ...headers } })
   if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`)
   return r
 }
@@ -28,8 +28,10 @@ async function latestRelease() {
 
 async function main() {
   const rel = await latestRelease()
-  const bins = rel.assets.filter((a) => /^openshift-.+\.bin$/.test(a.name))
-  if (bins.length !== 1) throw new Error(`release ${rel.tag_name} has ${bins.length} openshift-*.bin files, expected 1`)
+  // Releases made before the rename to OpenShifter (0.5.0 and older) name the
+  // file openshift-<version>.bin and the image says "OpenShift <version>".
+  const bins = rel.assets.filter((a) => /^openshift(er)?-.+\.bin$/.test(a.name))
+  if (bins.length !== 1) throw new Error(`release ${rel.tag_name} has ${bins.length} openshifter-*.bin files, expected 1`)
   const bin = bins[0]
   const sums = rel.assets.find((a) => a.name === 'SHA256SUMS')
   if (!sums) throw new Error(`release ${rel.tag_name} has no SHA256SUMS`)
@@ -45,11 +47,11 @@ async function main() {
     throw new Error(`${bin.name} does not match the digest GitHub recorded for it`)
   }
 
-  const m = /OpenShift (\d+\.\d+\.\d+[0-9A-Za-z.+-]*)/.exec(data.toString('latin1'))
-  if (!m) throw new Error(`${bin.name} has no OpenShift version mark`)
+  const m = /OpenShift(?:er)? (\d+\.\d+\.\d+[0-9A-Za-z.+-]*)/.exec(data.toString('latin1'))
+  if (!m) throw new Error(`${bin.name} has no OpenShifter version mark`)
   const version = m[1]
-  if (bin.name !== `openshift-${version}.bin` || rel.tag_name !== `v${version}`) {
-    throw new Error(`${bin.name} in release ${rel.tag_name} reports OpenShift ${version}`)
+  if (![`openshifter-${version}.bin`, `openshift-${version}.bin`].includes(bin.name) || rel.tag_name !== `v${version}`) {
+    throw new Error(`${bin.name} in release ${rel.tag_name} reports OpenShifter ${version}`)
   }
 
   // Replaces the files in place: a running dev server stops serving the

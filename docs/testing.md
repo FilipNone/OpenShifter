@@ -1,12 +1,12 @@
 # Testing and verification
 
-OpenShift has been tested without hardware, in three layers. Run them all with `make -C firmware test`.
+OpenShifter has been tested without hardware, in three layers. Run them all with `make -C firmware test`.
 
 | Suite | Tests | What it covers |
 |---|---|---|
-| `tests/test_shifter.py` | 17 | the gear/sensor core built for the host with trapping UBSan, against exact float oracles; the OpenShift settings, LEDs and buttons |
-| `tests/test_emulated.py` | 20 | the real `openshift.bin`, and the stock image, on an emulated board |
-| `tests/test_ctl.py` | 9 | `openshift_ctl.py` against the shifter core running in a thread |
+| `tests/test_shifter.py` | 17 | the gear/sensor core built for the host with trapping UBSan, against exact float oracles; the OpenShifter settings, LEDs and buttons |
+| `tests/test_emulated.py` | 20 | the real `openshifter.bin`, and the stock image, on an emulated board |
+| `tests/test_ctl.py` | 9 | `openshifter_ctl.py` against the shifter core running in a thread |
 | `tests/test_flasher.py` | 19 | the flasher against a simulated bootloader and a fake sysfs tree |
 
 ## The emulator (`tests/emu`)
@@ -28,16 +28,16 @@ OpenShift has been tested without hardware, in three layers. Run them all with `
   chosen frames, like a slower host), and can send control requests, interrupt OUT reports, bus resets and suspend/resume
 
 The stock image needs no patches to run. That is the basis of the
-**differential tests**: the same physical inputs go to stock and to OpenShift,
+**differential tests**: the same physical inputs go to stock and to OpenShifter,
 and everything a PC can see is compared. That covers descriptors, every
 standard and class request, both input reports, the UART stream, LED frames
 and the settings page contents, byte for byte.
 
-OpenShift's own settings start differently from stock (logo off, a warm
+OpenShifter's own settings start differently from stock (logo off, a warm
 colour), so these tests give both images a settings page with logo on, gamma
 off, stock's yellow and full gains in halfwords 0x50 to 0x56, which stock
 ignores. The remaining differences are checked explicitly, not skipped: report
-0x24 bytes 23, 24, 53 and 54 are cleared after they are checked, OpenShift's
+0x24 bytes 23, 24, 53 and 54 are cleared after they are checked, OpenShifter's
 report descriptor (and its length in the HID descriptor) is checked against
 the expected one and then replaced with stock's, and LED frames in sequential mode are compared with the handbrake LED
 off.
@@ -55,7 +55,7 @@ off.
 | UART stream with no USB host | `MatchesStock.test_uart_stream_without_usb_host` |
 | Host suspend (LEDs and sensor off) and resume | `MatchesStock.test_suspend_and_resume` |
 
-To verify the floating-point details exactly, OpenShift replaces stock's float
+To verify the floating-point details exactly, OpenShifter replaces stock's float
 library with integer code. `test_shifter.py` checks that code against Python
 references for:
 - multiply and divide: 100k random cases each
@@ -67,11 +67,11 @@ real bugs were found this way and fixed:
 - `tilt_of` overflowed for s12 ≥ 32768, which a strong magnetic field can produce
 - `sh_sincos_q30` had a signed overflow that clang miscompiled
 
-## OpenShift-only behaviour
+## OpenShifter-only behaviour
 
-`OpenShift.*` in `test_emulated.py`:
+`OpenShifter.*` in `test_emulated.py`:
 
-- enumerates as `10f5:7096` and reports `OpenShift <version>`
+- enumerates as `10f5:7096` and reports `OpenShifter <version>`
 - `24 00` turns the LEDs yellow, sets the bootloader flag and resets
 - recovery into the bootloader in each of these cases:
   - both buttons (High/low and Handbrake) held at power-up (USB never attaches; one button alone is ignored)
@@ -90,9 +90,9 @@ None of these tests may write flash outside the FPEC rules. The emulator records
 
 ## Intentional differences
 
-| Area | Stock | OpenShift |
+| Area | Stock | OpenShifter |
 |---|---|---|
-| iConfiguration | 0 (none) | string 4, "OpenShift x.y.z" |
+| iConfiguration | 0 (none) | string 4, "OpenShifter x.y.z" |
 | GET_REPORT | returns a fixed buffer of unrelated RAM | returns the current report 1 or 0x24 |
 | Control SET_REPORT | ignored if short; a 64-byte one crashes (jump to 0) | runs the command, like interrupt OUT |
 | Recovery | none | High/low and Handbrake buttons held at power-up, fault, 3 s stall, host never configuring, PLL failure: all enter the vendor bootloader |
@@ -107,13 +107,13 @@ None of these tests may write flash outside the FPEC rules. The emulator records
 | Gear and sequential debounce | 20 samples (40 ms) | 5 samples (10 ms) (`Core.test_calibration_round_trip_and_gears`); not yet checked on a real unit |
 | Handbrake button LED | lit in every mode; green in handbrake mode | the set colour in H, off in sequential mode, green in handbrake mode |
 | High/low button (A) | a button | a button, or a latching toggle (`24 32 1`) with a red/green LED |
-| Report descriptor | 11 buttons in nested application collections without a usage; Linux maps them to `BTN_0`.. and udev does not tag a joystick | one Joystick collection with the 12 report bits as buttons 2 to 13, button 1 for the optional neutral button (`24 35 1`), padding, Z and report 0x24 on vendor page `0xFF00` (`OpenShift.test_report_descriptor`); not yet checked on a real host |
-| Report 0x24 bytes 23, 24, 53, 54 | 0 | OpenShift options and white balance |
-| Settings halfwords 0x50 to 0x56 | unused | OpenShift options, colour and white balance |
+| Report descriptor | 11 buttons in nested application collections without a usage; Linux maps them to `BTN_0`.. and udev does not tag a joystick | one Joystick collection with the 12 report bits as buttons 2 to 13, button 1 for the optional neutral button (`24 35 1`), padding, Z and report 0x24 on vendor page `0xFF00` (`OpenShifter.test_report_descriptor`); not yet checked on a real host |
+| Report 0x24 bytes 23, 24, 53, 54 | 0 | OpenShifter options and white balance |
+| Settings halfwords 0x50 to 0x56 | unused | OpenShifter options, colour and white balance |
 
 Some timings differ by a few tens of milliseconds, all measured in the emulator:
 
-| Event | Stock | OpenShift |
+| Event | Stock | OpenShifter |
 |---|---|---|
 | USB attach after reset | about 246 ms | about 235 ms |
 | LEDs off after suspend | +1066 ms | +1005 ms |
@@ -123,7 +123,7 @@ Some timings differ by a few tens of milliseconds, all measured in the emulator:
 ## Not covered
 
 - **Real hardware, beyond a first run.** On 2026-10-20 one unit was flashed
-  from Linux with the stock image and then with OpenShift 0.1.0, and OpenShift
+  from Linux with the stock image and then with OpenShifter 0.1.0, and OpenShifter
   worked. An item-by-item hardware checklist is not done yet.
   The emulator models only what both firmwares use, and its peripheral models
   were written from the STM32F103 reference manual and from what the stock
@@ -149,13 +149,13 @@ Some timings differ by a few tens of milliseconds, all measured in the emulator:
 
 ```sh
 pip install -r requirements-dev.txt          # unicorn 2.1.4
-make -C firmware                              # builds build/openshift.bin
+make -C firmware                              # builds build/openshifter.bin
 make -C firmware test                         # all suites (about 4 minutes)
 python3 -m unittest discover -s tests -p test_flasher.py -v   # just one suite
 ```
 
 The differential tests need the stock image at
-`firmware/stock/VelocityOneTuner_Shift_Firmware.bin` (or `$OPENSHIFT_STOCK_FW`).
+`firmware/stock/VelocityOneTuner_Shift_Firmware.bin` (or `$OPENSHIFTER_STOCK_FW`).
 It is not distributed here; without it those tests are skipped.
 
 The web tool has its own tests (Vitest), which also check the image in

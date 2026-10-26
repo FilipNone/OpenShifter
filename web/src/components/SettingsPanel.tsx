@@ -290,22 +290,22 @@ function WhiteBalance({ session, status, onEditing }:
 export function SettingsPanel({ session, status, firmware, onPinAccent, onOpenFirmware }:
   { session: Session; status: Status | null; firmware: Firmware | null; onPinAccent(c: RGB | null): void; onOpenFirmware(): void }) {
   if (!status || !firmware) return <p className="text-sm/6 text-zinc-600 dark:text-zinc-400">Reading the shifter…</p>
-  if (firmware.kind !== 'openshift') {
+  if (firmware.kind !== 'openshifter') {
     return (
       <Section title="Settings" description="LED colour, the logo LED and the high/low button.">
-        <Notice title="These settings need OpenShift">
-          <p>The stock firmware has no way to save them. Install OpenShift from the Firmware tab first.
+        <Notice title="These settings need OpenShifter">
+          <p>The stock firmware has no way to save them. Install OpenShifter from the Firmware tab first.
             Calibration works with either firmware.</p>
         </Notice>
         <Button className="mt-4" variant="primary" onClick={onOpenFirmware}>Go to Firmware</Button>
       </Section>
     )
   }
-  return <OpenShiftSettings session={session} status={status} balance={firmware.balance} neutral={firmware.neutral}
+  return <OpenShifterSettings session={session} status={status} balance={firmware.balance} neutral={firmware.neutral}
     onPinAccent={onPinAccent} />
 }
 
-function OpenShiftSettings({ session, status, balance, neutral, onPinAccent }:
+function OpenShifterSettings({ session, status, balance, neutral, onPinAccent }:
   { session: Session; status: Status; balance: boolean; neutral: boolean; onPinAccent(c: RGB | null): void }) {
   const logo = useImmediate(session, status.logo, (v) => [CMD_LOGO, +v], (st, v) => st.logo === v, 'logo LED')
   const highlow = useImmediate(session, status.highlowToggle, (v) => [CMD_HIGHLOW, +v],
@@ -334,7 +334,7 @@ function OpenShiftSettings({ session, status, balance, neutral, onPinAccent }:
         </div>
         {!balance && (
           <p className="mt-4 text-sm/6 text-zinc-600 dark:text-zinc-400">
-            White balance and gamma need OpenShift 0.3.0 or newer.
+            White balance and gamma need OpenShifter 0.3.0 or newer.
           </p>
         )}
       </Section>
@@ -367,7 +367,7 @@ function OpenShiftSettings({ session, status, balance, neutral, onPinAccent }:
           </div>
         ) : (
           <p className="text-sm/6 text-zinc-600 dark:text-zinc-400">
-            The neutral button needs OpenShift 0.5.0 or newer. Update from the Firmware tab.
+            The neutral button needs OpenShifter 0.5.0 or newer. Update from the Firmware tab.
           </p>
         )}
       </Section>

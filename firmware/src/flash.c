@@ -1,4 +1,4 @@
-/* OpenShift: settings page and bootloader hand-off. SPDX-License-Identifier: MIT
+/* OpenShifter: settings page and bootloader hand-off. SPDX-License-Identifier: MIT
  *
  * The page size of this part is not known for certain (stock assumes 2 KB).
  * The write path works for either: the whole 2 KB is copied, the page at

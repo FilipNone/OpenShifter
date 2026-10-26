@@ -9,15 +9,15 @@ import struct
 from stm32emu import EmuError, Machine, SETTINGS_ADDR
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-OPENSHIFT_BIN = ROOT / 'firmware' / 'build' / 'openshift.bin'
-STOCK_BIN = pathlib.Path(os.environ.get('OPENSHIFT_STOCK_FW',
+OPENSHIFTER_BIN = ROOT / 'firmware' / 'build' / 'openshifter.bin'
+STOCK_BIN = pathlib.Path(os.environ.get('OPENSHIFTER_STOCK_FW',
                                         ROOT / 'firmware' / 'stock' / 'VelocityOneTuner_Shift_Firmware.bin'))
 # Image shipped by VelocityOne Tuner (TBRS004-20241224); used only as a reference.
 STOCK_SHA256 = '96da5e6b50f9339b78b99128a069040995fed5e451626a91ffbf7386499dc0d1'
 
 
-def openshift_image():
-    return OPENSHIFT_BIN.read_bytes()
+def openshifter_image():
+    return OPENSHIFTER_BIN.read_bytes()
 
 
 def stock_image():
@@ -60,7 +60,7 @@ class Rig:
         self.m.run(ms=ms)
 
     def command(self, *payload, ms=60):
-        """A 64-byte output report on the interrupt OUT endpoint."""
+        """A 64-byte output report on the interrupt OUT endpoint, as Tuner sends it."""
         data = bytes(payload) + bytes(64 - len(payload))
         done = {}
 

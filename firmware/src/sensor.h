@@ -1,6 +1,6 @@
-/* OpenShift: 3-axis magnetometer on a bit-banged SPI bus. SPDX-License-Identifier: MIT */
-#ifndef OPENSHIFT_SENSOR_H
-#define OPENSHIFT_SENSOR_H
+/* OpenShifter: 3-axis magnetometer on a bit-banged SPI bus. SPDX-License-Identifier: MIT */
+#ifndef OPENSHIFTER_SENSOR_H
+#define OPENSHIFTER_SENSOR_H
 
 #include <stdint.h>
 

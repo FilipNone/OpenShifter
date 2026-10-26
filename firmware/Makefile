@@ -1,7 +1,7 @@
-# OpenShift firmware. Needs clang + lld (LLVM >= 15); no libc, no libgcc.
+# OpenShifter firmware. Needs clang + lld (LLVM >= 15); no libc, no libgcc.
 VERSION ?= 0.5.0
 BUILD   := build
-TARGET  := $(BUILD)/openshift
+TARGET  := $(BUILD)/openshifter
 SRCS    := $(wildcard src/*.c)
 OBJS    := $(SRCS:src/%.c=$(BUILD)/%.o)
 
@@ -12,12 +12,12 @@ ARCH    := --target=thumbv7m-none-eabi -mcpu=cortex-m3 -mthumb -mfloat-abi=soft
 CFLAGS  := $(ARCH) -std=c11 -Os -g -ffreestanding -fno-builtin -nostdlib \
            -ffunction-sections -fdata-sections -fno-common \
            -Wall -Wextra -Werror -Wno-unused-function -Wno-initializer-overrides \
-           -DOPENSHIFT_VERSION='"$(VERSION)"'
+           -DOPENSHIFTER_VERSION='"$(VERSION)"'
 LDFLAGS := $(ARCH) -fuse-ld=lld -nostdlib -static -Wl,-T,linker.ld \
            -Wl,--gc-sections -Wl,-Map,$(TARGET).map
 
 PYTHON  ?= python3
-FLASHER := $(PYTHON) ../tools/openshift_flash.py
+FLASHER := $(PYTHON) ../tools/openshifter_flash.py
 
 .PHONY: all clean flash flash-stock size test
 all: $(TARGET).bin size

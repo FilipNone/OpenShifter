@@ -1,4 +1,4 @@
-/* OpenShift: clocks, pins, time base, reset. SPDX-License-Identifier: MIT */
+/* OpenShifter: clocks, pins, time base, reset. SPDX-License-Identifier: MIT */
 #include "board.h"
 
 volatile uint32_t g_ms;

@@ -1,4 +1,4 @@
-/* OpenShift: LED chain and UART link. SPDX-License-Identifier: MIT */
+/* OpenShifter: LED chain and UART link. SPDX-License-Identifier: MIT */
 #include "periph.h"
 #include "board.h"
 #include "regs.h"

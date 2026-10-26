@@ -2,7 +2,7 @@ The Turtle Beach firmware is not included here, but you can put it back at any t
 
 ## With VelocityOne Tuner (Windows)
 
-Update the shifter in VelocityOne Tuner as usual. Tuner installs its own firmware over OpenShift.
+Update the shifter in VelocityOne Tuner as usual. Tuner installs its own firmware over OpenShifter.
 
 ## With the web tool
 

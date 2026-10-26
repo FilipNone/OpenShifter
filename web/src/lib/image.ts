@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// Firmware image checks, as in tools/openshift_flash.py (Image).
+// Firmware image checks, as in tools/openshifter_flash.py (Image).
 import { APP_BASE, APP_MAX } from './protocol'
 
 const RAM_BASE = 0x20000000
@@ -14,27 +14,32 @@ export interface FirmwareImage {
   data: Uint8Array
   name: string
   sha256: string
-  openshiftVersion: string | null
+  openshifterVersion: string | null
   stock: string | null
   problems: string[]
 }
 
 export function kind(img: FirmwareImage): string {
-  if (img.openshiftVersion) return `OpenShift ${img.openshiftVersion}`
+  if (img.openshifterVersion) return `OpenShifter ${img.openshifterVersion}`
   if (img.stock) return img.stock
   return 'Unrecognised image'
 }
 
 export function isKnown(img: FirmwareImage): boolean {
-  return Boolean(img.openshiftVersion || img.stock)
+  return Boolean(img.openshifterVersion || img.stock)
 }
 
-export function findOpenShiftVersion(data: Uint8Array): string | null {
-  const mark = [...'OpenShift '].map((c) => c.charCodeAt(0))
+/** Builds made before the rename to OpenShifter (0.5.0 and older) say "OpenShift". */
+export function findOpenShifterVersion(data: Uint8Array): string | null {
+  const mark = [...'OpenShift'].map((c) => c.charCodeAt(0))
+  const at = (k: number, c: string) => data[k] === c.charCodeAt(0)
   outer: for (let i = 0; i + mark.length < data.length; i++) {
     for (let j = 0; j < mark.length; j++) if (data[i + j] !== mark[j]) continue outer
+    let start = i + mark.length
+    if (at(start, 'e') && at(start + 1, 'r')) start += 2
+    if (!at(start, ' ')) continue
     let s = ''
-    for (let k = i + mark.length; k < data.length; k++) {
+    for (let k = start + 1; k < data.length; k++) {
       const c = String.fromCharCode(data[k])
       if (!/[0-9A-Za-z.+-]/.test(c)) break
       s += c
@@ -82,7 +87,7 @@ export async function loadImage(data: Uint8Array, name: string): Promise<Firmwar
     data,
     name,
     sha256: sum,
-    openshiftVersion: findOpenShiftVersion(data),
+    openshifterVersion: findOpenShifterVersion(data),
     stock: KNOWN_STOCK[sum] ?? null,
     problems: problems(data),
   }

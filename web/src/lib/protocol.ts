@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The shifter's HID protocol, as in docs/protocol.md and tools/openshift_*.py.
+// The shifter's HID protocol, as in docs/protocol.md and tools/openshifter_*.py.
 // WebHID passes report data without the report ID, so payloads here are the
 // bytes after the ID: 63 for report 0x24.
 
@@ -146,7 +146,7 @@ export function engagedGear(gears: number): number | null {
   return null
 }
 
-/** Feature report 0x25 (OpenShift 0.4.0 and newer): the version string. */
+/** Feature report 0x25 (OpenShifter 0.4.0 and newer): the version string. */
 export function parseVersion(data: DataView): string | null {
   let bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
   // Chrome includes the report ID on some platforms and not on others.

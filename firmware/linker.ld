@@ -1,4 +1,4 @@
-/* OpenShift: application image, started by the vendor bootloader.
+/* OpenShifter: application image, started by the vendor bootloader.
  * 0x08000000-0x0800EFFF bootloader (untouched), 0x0800F000 settings page,
  * 0x08010000 application (the stock image is linked at the same address). */
 ENTRY(reset_handler)

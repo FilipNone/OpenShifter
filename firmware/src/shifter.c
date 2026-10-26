@@ -1,4 +1,4 @@
-/* OpenShift: portable shifter logic. SPDX-License-Identifier: MIT
+/* OpenShifter: portable shifter logic. SPDX-License-Identifier: MIT
  *
  * The stock firmware does this with soft-float/soft-double; the Cortex-M3 has
  * no FPU and this project ships no libgcc, so everything here is integer.
@@ -26,7 +26,7 @@ static const int32_t cordic_atan[30] = {
     10430, 5215, 2608, 1304, 652, 326, 163, 81, 41, 20, 10, 5, 3, 1,
 };
 
-/* Loader defaults for an unconfigured unit. */
+/* Stock's defaults for an unconfigured unit. */
 static const int16_t default_gear_x[8] = { 1986, 2400, 40, 70, -1956, -2576, -866, -1116 };
 static const int16_t default_gear_y[8] = { 2400, -1886, 3175, -2536, 1720, -1856, 170, -236 };
 
@@ -562,7 +562,7 @@ static int abs16(int v)
     return v < 0 ? -v : v;
 }
 
-/* Neutral = the sample closest to zero on each axis. */
+/* Neutral = the sample closest to zero on each axis, as on stock. */
 static void track_neutral(shifter_t *s)
 {
     if (abs16(s->x) < abs16(s->neutral_x) || s->neutral_flags != 3) {
@@ -687,7 +687,8 @@ int shifter_sensor_frame(shifter_t *s, const uint8_t f[8])
     return res;
 }
 
-/* As on stock. */
+/* Button B and 24 22: H-pattern with the switch in H, otherwise sequential
+ * and handbrake in turn. */
 static unsigned mode_cycle(shifter_t *s)
 {
     if (s->sw_h) {
@@ -752,7 +753,7 @@ unsigned shifter_buttons(shifter_t *s, int pb10_low, int pa5_low, int pa4_low)
     return act;
 }
 
-/* As on stock. */
+/* Calibration command 24 21 t, as on stock. */
 static void calibrate(shifter_t *s, unsigned t)
 {
     s->hb_x_rest = s->neutral_x;
@@ -827,7 +828,7 @@ unsigned shifter_command(shifter_t *s, const uint8_t *buf, unsigned len)
         if (b[2] >= 1 && b[2] <= 8)
             s->cfg[b[2] - 1] = b[3];
         return SH_ACT_SAVE;
-    /* OpenShift commands */
+    /* OpenShifter commands */
     case 0x30:  /* LED colour R G B, saved */
         for (int i = 0; i < 3; i++)
             s->color[i] = s->led_rgb[i] = b[2 + i];
@@ -910,7 +911,7 @@ void shifter_report36(const shifter_t *s, uint8_t out[64])
     out[18] = (uint8_t)(s->btn_a | s->btn_b << 1 | s->sw_h << 2 | (s->mode == SH_MODE_HANDBRAKE) << 3 |
                         s->seq_down << 4 | s->seq_up << 5);
     out[48] = (uint8_t)(s->r >> 3);
-    /* OpenShift options; stock leaves this byte at 0. */
+    /* OpenShifter options; stock leaves this byte at 0. */
     out[23] = (uint8_t)(0x80 | s->options | s->range_on << 2);
     out[24] = s->gain[0];
     out[53] = s->gain[1];

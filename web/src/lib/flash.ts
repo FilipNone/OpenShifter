@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-// The firmware update, as flash() in tools/openshift_flash.py, plus the two
+// The firmware update, as flash() in tools/openshifter_flash.py, plus the two
 // steps WebHID adds: the bootloader is a new USB device, so the browser asks
 // for permission once more, and the way to write to it comes from its report
 // descriptor, which was never captured.
@@ -35,7 +35,7 @@ export interface FlashOptions {
 
 export interface FlashResult {
   device: ShifterDevice
-  /** Version from feature report 0x25, null for stock or OpenShift < 0.4. */
+  /** Version from feature report 0x25, null for stock or OpenShifter < 0.4. */
   version: string | null
 }
 
@@ -119,7 +119,7 @@ export async function flash(bus: Bus, image: FirmwareImage, opts: FlashOptions):
   const form = writeForm(dev)
   if (!form) {
     throw new FlashError('the shifter in update mode does not declare a 64-byte output report, so the page ' +
-      'cannot write to it. Nothing was erased; the shifter stays in update mode. Use tools/openshift_flash.py ' +
+      'cannot write to it. Nothing was erased; the shifter stays in update mode. Use tools/openshifter_flash.py ' +
       'instead, or unplug the shifter and install with VelocityOne Tuner.')
   }
 
@@ -162,10 +162,10 @@ export async function flash(bus: Bus, image: FirmwareImage, opts: FlashOptions):
   }
   opts.onStage('verify')
   const version = await readVersion(app)
-  const expected = image.openshiftVersion
+  const expected = image.openshifterVersion
   if (expected && compareVersions(expected, '0.4.0') >= 0 && version !== expected) {
-    throw new FlashError(`the shifter restarted but reports ${version ? `OpenShift ${version}` : 'no OpenShift ' +
-      'version'} instead of OpenShift ${expected}`, true)
+    throw new FlashError(`the shifter restarted but reports ${version ? `OpenShifter ${version}` : 'no OpenShifter ' +
+      'version'} instead of OpenShifter ${expected}`, true)
   }
   opts.onStage('done')
   return { device: app, version }

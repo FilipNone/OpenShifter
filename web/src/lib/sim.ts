@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 // A simulated shifter for the ?demo page and the tests. Its bootloader checks
-// the timing Tuner uses, as SimShifter in tools/openshift_flash.py does.
+// the timing Tuner uses, as SimShifter in tools/openshifter_flash.py does.
 import type { Bus, InputReport, ShifterDevice } from './hid'
-import { findOpenShiftVersion } from './image'
+import { findOpenShifterVersion } from './image'
 import {
   APP_MAX, BTN_NEUTRAL, BTN_SHIFT_DOWN, BTN_SHIFT_UP, CHUNK, CHUNK_GAP_MS, CMD_BALANCE, CMD_BOOT, CMD_CALIBRATE, CMD_COLOR, CMD_DONE, CMD_ERASE,
   CMD_GAMMA, CMD_HIGHLOW, CMD_LED, CMD_LOGO, CMD_NEUTRAL, CMD_WRITE, DEFAULT_COLOR, DEFAULT_GAINS, ERASE_WAIT_MS,
@@ -45,7 +45,7 @@ export const RADIUS: Record<string, number> = {
  * field strength. */
 export const UNLOCK: [x: number, y: number, radius: number][] = [[-2976, -154, 552], [-1604, -3, 248]]
 
-/** Output report 0x24 (63 bytes), as the OpenShift descriptor declares it. */
+/** Output report 0x24 (63 bytes), as the OpenShifter descriptor declares it. */
 function out24(): HIDReportInfo {
   return { reportId: REPORT_ID, items: [{ reportSize: 8, reportCount: REPORT_LEN }] } as unknown as HIDReportInfo
 }
@@ -112,7 +112,7 @@ export class SimShifter {
   }
 
   get version(): string | null {
-    return findOpenShiftVersion(this.flash)
+    return findOpenShifterVersion(this.flash)
   }
 
   get present(): boolean {
@@ -224,7 +224,7 @@ export class SimShifter {
     }
   }
 
-  private get isOpenShift() {
+  private get isOpenShifter() {
     return this.version !== null
   }
 
@@ -235,7 +235,7 @@ export class SimShifter {
       case CMD_LED: this.live = [d[5], d[6], d[7]]; return   // 24 20 0 0 0 0 R G B
       case CMD_CALIBRATE: return this.calibrate(a)
     }
-    if (!this.isOpenShift) return
+    if (!this.isOpenShifter) return
     switch (cmd) {
       case CMD_COLOR: this.color = [a, b, c]; this.live = null; break
       case CMD_LOGO: this.logo = a !== 0; break
@@ -290,7 +290,7 @@ export class SimShifter {
     this.gears.forEach(([x, y], k) => { put(13 + 6 * k, x); put(15 + 6 * k, y) })
     r[18] = this.switchH ? 0x04 : 0
     r[48] = Math.min(255, Math.round(this.radius / 8))
-    if (this.isOpenShift) {
+    if (this.isOpenShifter) {
       r[23] = OPT_PRESENT | (this.logo ? OPT_LOGO : 0) | (this.highlowToggle ? OPT_RANGE_TOGGLE : 0) |
         (this.highlowOn ? OPT_RANGE_ON : 0) | (this.gamma ? OPT_GAMMA : 0) |
         (this.neutralButton ? OPT_NEUTRAL : 0)

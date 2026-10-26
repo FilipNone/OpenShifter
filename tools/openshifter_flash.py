@@ -20,7 +20,7 @@ firmware can be restored with this tool the same way. An update erases the
 settings page, which holds the calibration.
 
 Only the Python standard library is needed. Access to /dev/hidraw* needs root
-or the udev rule printed by `openshift_flash.py udev-rule`.
+or the udev rule printed by `openshifter_flash.py udev-rule`.
 """
 from __future__ import annotations
 
@@ -53,10 +53,11 @@ KNOWN_STOCK = {
     '96da5e6b50f9339b78b99128a069040995fed5e451626a91ffbf7386499dc0d1':
         'Turtle Beach stock firmware TBRS004-20241224 (VelocityOne Tuner 1.1.13.0)',
 }
-OPENSHIFT_MARK = re.compile(rb'OpenShift (\d+\.\d+\.\d+[0-9A-Za-z.+-]*)')
+# Builds made before the rename to OpenShifter (0.5.0 and older) say "OpenShift".
+OPENSHIFTER_MARK = re.compile(rb'OpenShift(?:er)? (\d+\.\d+\.\d+[0-9A-Za-z.+-]*)')
 
 UDEV_RULE = """\
-# /etc/udev/rules.d/70-openshift.rules
+# /etc/udev/rules.d/70-openshifter.rules
 # VelocityOne Multi-Shift: application (7096) and vendor bootloader (7097).
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="10f5", ATTRS{idProduct}=="7096", TAG+="uaccess"
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="10f5", ATTRS{idProduct}=="7097", TAG+="uaccess"
@@ -92,21 +93,22 @@ class Image:
         self.data = bytes(data)
         self.name = name
         self.sha256 = hashlib.sha256(self.data).hexdigest()
-        m = OPENSHIFT_MARK.search(self.data)
-        self.openshift_version = m.group(1).decode() if m else None
+        m = OPENSHIFTER_MARK.search(self.data)
+        self.openshifter_version = m.group(1).decode() if m else None
+        self.mark = m.group(0).decode() if m else None   # also the iConfiguration string
         self.stock = KNOWN_STOCK.get(self.sha256)
 
     @property
     def kind(self) -> str:
-        if self.openshift_version:
-            return f'OpenShift {self.openshift_version}'
+        if self.openshifter_version:
+            return f'OpenShifter {self.openshifter_version}'
         if self.stock:
             return self.stock
         return 'unrecognised image'
 
     @property
     def known(self) -> bool:
-        return bool(self.openshift_version or self.stock)
+        return bool(self.openshifter_version or self.stock)
 
     def problems(self) -> list[str]:
         """Reasons this cannot be an application image for the shifter."""
@@ -148,9 +150,9 @@ class DeviceInfo:
     def firmware(self) -> str:
         if self.pid == PID_BOOT:
             return 'bootloader (update mode)'
-        if self.configuration.startswith('OpenShift'):
+        if self.configuration.startswith(('OpenShifter ', 'OpenShift ')):
             return self.configuration
-        return 'stock (no OpenShift identification)'
+        return 'stock (no OpenShifter identification)'
 
     def has_output_report(self, report_id=REPORT_ID) -> bool | None:
         """True/False from the report descriptor, None if it is unavailable."""
@@ -229,7 +231,7 @@ class LinuxBus:
             except PermissionError:
                 if self.monotonic() > deadline:
                     raise FlashError(f'no permission to open {info.path}: run as root or install '
-                                     f'the udev rule (openshift_flash.py udev-rule)') from None
+                                     f'the udev rule (openshifter_flash.py udev-rule)') from None
             except FileNotFoundError:
                 if self.monotonic() > deadline:
                     raise FlashError(f'{info.path} disappeared') from None
@@ -292,8 +294,8 @@ class SimShifter:
             return []
         cfg = ''
         if self.pid == PID_APP:
-            m = OPENSHIFT_MARK.search(bytes(self.flash))
-            cfg = f'OpenShift {m.group(1).decode()}' if m else ''
+            m = OPENSHIFTER_MARK.search(bytes(self.flash))
+            cfg = m.group(0).decode() if m else ''
         rd = bytes.fromhex('0600ff0901a1018524090115002600ff7508953f9102c0')
         return [DeviceInfo('/dev/sim', self.pid, 'VelocityOne Multi-Shift', cfg, '', rd)]
 
@@ -415,9 +417,9 @@ def flash(bus, image: Image, *, device=None, out=None, progress=True):
     bus.sleep(0.5)
     app = wait_for(bus, PID_APP, 15.0)
     say(f'{app.path}: restarted as 10f5:7096, firmware: {app.firmware}', out)
-    if image.openshift_version and app.configuration != f'OpenShift {image.openshift_version}':
+    if image.mark and app.configuration != image.mark:
         raise FlashError(f'the shifter restarted but reports {app.configuration!r} instead of '
-                         f'OpenShift {image.openshift_version}')
+                         f'{image.mark}')
     return app
 
 
@@ -436,7 +438,7 @@ def load_image(path, allow_foreign):
     if probs:
         raise FlashError(f'{path} is not a Multi-Shift application image:\n  ' + '\n  '.join(probs))
     if not img.known and not allow_foreign:
-        raise FlashError(f'{path} is neither an OpenShift build nor a known stock image; '
+        raise FlashError(f'{path} is neither an OpenShifter build nor a known stock image; '
                          f'pass --allow-foreign if you are sure it is for this shifter')
     return img
 
@@ -512,7 +514,7 @@ def main(argv=None, bus=None):
     f.add_argument('image')
     f.add_argument('--device', help='/dev/hidrawN when several shifters are connected')
     f.add_argument('--allow-foreign', action='store_true',
-                   help='accept an image that is neither OpenShift nor a known stock build')
+                   help='accept an image that is neither OpenShifter nor a known stock build')
     f.add_argument('--dry-run', action='store_true',
                    help='run the full update against a simulated shifter')
     f.add_argument('-y', '--yes', action='store_true', help='do not ask for confirmation')

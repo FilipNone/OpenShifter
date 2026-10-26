@@ -1,4 +1,4 @@
-Calibrating teaches the shifter where neutral, the handbrake and each gear are. Do it after every install, or when a gear is detected wrong. It works with OpenShift and with the stock firmware.
+Calibrating teaches the shifter where neutral, the handbrake and each gear are. Do it after every install, or when a gear is detected wrong. It works with OpenShifter and with the stock firmware.
 
 ## Steps
 

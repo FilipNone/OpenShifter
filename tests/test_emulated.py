@@ -4,10 +4,10 @@ The emulator runs the real firmware image on a Cortex-M3 core with models of
 the AIR32F103 peripherals the shifter uses, the MLX90393 magnetic sensor, the
 buttons, the LEDs and a USB host that enumerates the device and polls it.
 
-OpenShift tests run on firmware/build/openshift.bin (`make -C firmware`).
+OpenShifter tests run on firmware/build/openshifter.bin (`make -C firmware`).
 Differential tests run the same scenario on the stock image and compare
 everything the host can see; they are skipped unless the vendor image is at
-firmware/stock/VelocityOneTuner_Shift_Firmware.bin (or $OPENSHIFT_STOCK_FW)
+firmware/stock/VelocityOneTuner_Shift_Firmware.bin (or $OPENSHIFTER_STOCK_FW)
 with the expected SHA-256.
 """
 import pathlib
@@ -23,15 +23,15 @@ try:
 except ImportError:
     raise unittest.SkipTest('unicorn is not installed (pip install -r requirements-dev.txt)')
 
-import openshift_flash as flasher  # noqa: E402
-from harness import OPENSHIFT_BIN, Rig, openshift_image, stock_image  # noqa: E402
+import openshifter_flash as flasher  # noqa: E402
+from harness import OPENSHIFTER_BIN, Rig, openshifter_image, stock_image  # noqa: E402
 from test_flasher import STOCK_REPORT_DESCRIPTOR  # noqa: E402
 from test_shifter import led  # noqa: E402  (LED colour reference)
 
-if not OPENSHIFT_BIN.exists():
+if not OPENSHIFTER_BIN.exists():
     raise unittest.SkipTest('build the firmware first: make -C firmware')
 
-VERSION = flasher.Image(openshift_image()).openshift_version
+VERSION = flasher.Image(openshifter_image()).openshifter_version
 
 GEARS = [(1986, 2400, 0x80), (2400, -1886, 0x80), (40, 3175, 0x80), (70, -2536, 0x80),
          (-1956, 1720, 0x80), (-2576, -1856, 0x80), (-866, 170, 0x70), (-1116, -236, 0x70)]
@@ -64,14 +64,14 @@ class EmulatedCase(unittest.TestCase):
         self.assertFlashClean(rig)
 
 
-class OpenShift(EmulatedCase):
+class OpenShifter(EmulatedCase):
     def test_enumerates_as_the_stock_device(self):
-        r = Rig(openshift_image()).boot()
+        r = Rig(openshifter_image()).boot()
         d = r.m.host.descriptors
         vid, pid, bcd = (int.from_bytes(d['device'][i:i + 2], 'little') for i in (8, 10, 12))
         self.assertEqual((vid, pid, bcd), (0x10F5, 0x7096, 0x0111))
         self.assertEqual(d['strings'][2], 'VelocityOne Multi-Shift\0\0')
-        self.assertEqual(d['strings'][4], f'OpenShift {VERSION}')
+        self.assertEqual(d['strings'][4], f'OpenShifter {VERSION}')
         self.assertEqual(r.last(0x01), bytes.fromhex('0100000000'))
         self.assertEqual(r.last(0x24)[:2], bytes([0x24, 0x20]))
         self.assertEqual(len(r.last(0x24)), 64)
@@ -81,9 +81,9 @@ class OpenShift(EmulatedCase):
         maps buttons by their application collection (BTN_JOYSTICK only under
         Joystick, which udev needs for ID_INPUT_JOYSTICK) and ignores vendor
         page 0xFF00. The reports keep stock's layout."""
-        r = Rig(openshift_image()).boot()
+        r = Rig(openshifter_image()).boot()
         d = r.m.host.descriptors
-        self.assertEqual(d['report'], OPENSHIFT_REPORT_DESCRIPTOR)
+        self.assertEqual(d['report'], OPENSHIFTER_REPORT_DESCRIPTOR)
         self.assertEqual(int.from_bytes(d['config'][25:27], 'little'), len(d['report']))
         collections, fields = parse_report_descriptor(d['report'])
         self.assertEqual(collections, [{'type': 1, 'usage': 0x00010004, 'depth': 0}])
@@ -112,7 +112,7 @@ class OpenShift(EmulatedCase):
     def test_version_feature_report(self):
         """GET_REPORT(feature 0x25) gives the version, for WebHID, which
         cannot read iConfiguration. Input GET_REPORT is unchanged."""
-        r = Rig(openshift_image()).boot(50)
+        r = Rig(openshifter_image()).boot(50)
         v = VERSION.encode()
         self.assertEqual(r.control(0xA1, 0x01, 0x0325, 0, 16), b'\x25' + v + bytes(15 - len(v)))
         self.assertEqual(r.control(0xA1, 0x01, 0x0325, 0, 4), (b'\x25' + v)[:4])
@@ -120,7 +120,7 @@ class OpenShift(EmulatedCase):
         self.assertEqual(r.control(0xA1, 0x01, 0x0125, 0, 16), 'STALL')
 
     def test_update_command_hands_over_to_bootloader(self):
-        r = Rig(openshift_image()).boot()
+        r = Rig(openshifter_image()).boot()
         r.command(*flasher.command(flasher.CMD_BOOT), ms=0)
         r.m.run(ms=1000)
         self.assertEqual(r.m.stopped_reason, 'reset')
@@ -128,39 +128,39 @@ class OpenShift(EmulatedCase):
         self.assertEqual(r.m.led_frames[-1][1], led(255, 255, 0) * 3, 'LEDs not yellow')
 
     def test_both_buttons_at_power_up_enter_bootloader(self):
-        r = Rig(openshift_image())
+        r = Rig(openshifter_image())
         r.m.buttons['PA4'] = r.m.buttons['PA5'] = True
         r.run(1000)
         self.assertEnteredBootloader(r)
         self.assertEqual(r.m.host.state, 'detached', 'USB attached before recovery')
 
     def test_one_button_at_power_up_boots_normally(self):
-        r = Rig(openshift_image())
+        r = Rig(openshifter_image())
         r.m.buttons['PA4'] = True
         r.boot()
         self.assertEqual(r.reset_events(), [])
 
     def test_fault_enters_bootloader(self):
-        r = Rig(openshift_image()).boot()
+        r = Rig(openshifter_image()).boot()
         r.fault()
         r.m.run(ms=500)
         self.assertEnteredBootloader(r)
 
     def test_host_that_never_configures_gets_the_bootloader(self):
-        r = Rig(openshift_image(), enumerate=False)
+        r = Rig(openshifter_image(), enumerate=False)
         r.run(400)
         r.bus_resets(8)
         r.m.run(ms=7000)
         self.assertEnteredBootloader(r)
 
     def test_no_host_keeps_running(self):
-        r = Rig(openshift_image(), enumerate=False)
+        r = Rig(openshifter_image(), enumerate=False)
         r.run(8000)
         self.assertEqual(r.reset_events(), [])
         self.assertGreater(len(r.m.uart_packets), 1000)
 
     def test_calibration_persists_across_power_cycle(self):
-        r = Rig(openshift_image(), h_pattern=True).boot()
+        r = Rig(openshifter_image(), h_pattern=True).boot()
         calibrate(r)
         page = r.settings_page()
         self.assertEqual(int.from_bytes(page[0xc6:0xc8], 'little'), 0x1254, 'settings magic')
@@ -174,7 +174,7 @@ class OpenShift(EmulatedCase):
             self.assertEqual(r.last(0x01)[1], 0, f'neutral after gear {k}')
 
     def test_sensor_is_power_cycled_when_it_stops_answering(self):
-        r = Rig(openshift_image()).boot()
+        r = Rig(openshifter_image()).boot()
         inits = sum(c == b'\x80' for c in r.m.sensor.log)
         r.m.set_raw(0, 0, 0, 0)
         r.run(400)
@@ -186,14 +186,14 @@ class OpenShift(EmulatedCase):
 
     def test_get_report_returns_live_reports(self):
         # Stock answers GET_REPORT with a fixed scratch buffer.
-        r = Rig(openshift_image(), h_pattern=True).boot()
+        r = Rig(openshifter_image(), h_pattern=True).boot()
         self.assertEqual(r.control(0xA1, 0x01, 0x0101, 0, 5), bytes.fromhex('0100000000'))
         rep = r.control(0xA1, 0x01, 0x0124, 0, 64)
         self.assertEqual(rep, r.last(0x24))
 
     def test_set_report_runs_commands(self):
         # Stock ignores short SET_REPORTs and crashes on 64-byte ones.
-        r = Rig(openshift_image(), h_pattern=True).boot()
+        r = Rig(openshifter_image(), h_pattern=True).boot()
         cmd = bytes([0x24, 0x20, 0, 0, 0, 0, 0x10, 0x20, 0x30]) + bytes(55)
         self.assertEqual(r.control(0x21, 0x09, 0x0224, 0, 64, cmd), b'')
         r.run(200)
@@ -205,7 +205,7 @@ class OpenShift(EmulatedCase):
         # Both reports are due every 2 ms and EP1 sends one per poll. 0.3.0
         # queued them, and a host polling every 2 ms got only report 1.
         for miss, least in ((lambda n: n % 7 == 0, 350), (lambda n: n % 2 == 0, 200)):
-            r = Rig(openshift_image()).boot()
+            r = Rig(openshifter_image()).boot()
             r.m.host.miss = miss
             n = len(r.m.host.in_reports)
             r.run(1000)
@@ -216,7 +216,7 @@ class OpenShift(EmulatedCase):
                 self.assertLess(gap, 10_000, f'report {rid:#x}: gap over 10 ms')
 
     def test_options_persist_and_drive_leds(self):
-        r = Rig(openshift_image(), h_pattern=True).boot()
+        r = Rig(openshifter_image(), h_pattern=True).boot()
         warm = led(255, 182, 78)
         self.assertEqual(r.m.led_frames[-1][1], warm + bytes(3) + warm)
         self.assertEqual(r.last(0x24)[6:9], bytes([255, 182, 78]))
@@ -252,7 +252,7 @@ class OpenShift(EmulatedCase):
 
 
 def as_stock_page():
-    """An erased settings page with OpenShift's own settings (halfwords
+    """An erased settings page with OpenShifter's own settings (halfwords
     0x50..0x56) set to logo on, stock's yellow and full gains.
     Stock never touches those halfwords, so both images then drive the LEDs
     the same way."""
@@ -262,7 +262,7 @@ def as_stock_page():
     return bytes(page)
 
 
-OPENSHIFT_REPORT_DESCRIPTOR = bytes.fromhex(
+OPENSHIFTER_REPORT_DESCRIPTOR = bytes.fromhex(
     '05010904a1018501 0509 1902290d 15002501 7501950c 8102 0901 9501 8102 9503 8103'
     '0501 0932 150027ffff0000 350047ffff0000 75109501 8102'
     '8524 0600ff 0901 150026ff00 7508953f 8102 0901 9102'
@@ -270,12 +270,12 @@ OPENSHIFT_REPORT_DESCRIPTOR = bytes.fromhex(
 
 
 def as_stock_descriptor(d):
-    """OpenShift rewrites the report descriptor (checked by
-    OpenShift.test_report_descriptor); everything else must match stock.
+    """OpenShifter rewrites the report descriptor (checked by
+    OpenShifter.test_report_descriptor); everything else must match stock.
     `d` may be a read cut short by wLength."""
-    if d == OPENSHIFT_REPORT_DESCRIPTOR:
+    if d == OPENSHIFTER_REPORT_DESCRIPTOR:
         return STOCK_REPORT_DESCRIPTOR
-    assert OPENSHIFT_REPORT_DESCRIPTOR.startswith(d), d.hex()
+    assert OPENSHIFTER_REPORT_DESCRIPTOR.startswith(d), d.hex()
     return STOCK_REPORT_DESCRIPTOR[:len(d)]
 
 
@@ -283,12 +283,12 @@ def as_stock_hid_descriptor(d):
     """`d` with the HID descriptor in it carrying stock's report descriptor length."""
     offset = d.index(b'\x09\x21')
     n = int.from_bytes(d[offset + 7:offset + 9], 'little')
-    assert n == len(OPENSHIFT_REPORT_DESCRIPTOR), n
+    assert n == len(OPENSHIFTER_REPORT_DESCRIPTOR), n
     return d[:offset + 7] + len(STOCK_REPORT_DESCRIPTOR).to_bytes(2, 'little') + d[offset + 9:]
 
 
 def as_stock_sensor_log(log):
-    """OpenShift writes 0 to the sensor's burst interval (sensor.c) where stock
+    """OpenShifter writes 0 to the sensor's burst interval (sensor.c) where stock
     writes 2; the rest of the sensor start must match stock."""
     ours, stock = b'\x60\x00\x00\x74', b'\x60\x00\x02\x74'
     assert ours in log, log
@@ -345,12 +345,12 @@ def parse_report_descriptor(d):
 
 
 def seq_leds(frames):
-    """Stock frames as OpenShift shows them in sequential mode: handbrake LED off."""
+    """Stock frames as OpenShifter shows them in sequential mode: handbrake LED off."""
     return [bytes(3) + f[3:] if any(f) else f for f in frames]
 
 
 class StockView(Rig):
-    """OpenShift with the report 0x24 bytes stock leaves at 0 (23: options;
+    """OpenShifter with the report 0x24 bytes stock leaves at 0 (23: options;
     24, 53, 54: white balance) checked and then cleared."""
 
     def last(self, report_id):
@@ -375,7 +375,7 @@ class MatchesStock(EmulatedCase):
             def make(image, settings=None, **kw):
                 return cls(image, as_stock_page() if settings is None else settings, **kw)
             return make
-        stock, ours = stock_image(), openshift_image()
+        stock, ours = stock_image(), openshifter_image()
         return scenario(stock, rig(stock)), scenario(ours, rig(ours))
 
     def test_descriptors(self):
@@ -410,7 +410,7 @@ class MatchesStock(EmulatedCase):
                 out[k] = as_stock_descriptor(out[k])
                 k = reqs.index((0x81, 6, 0x2100, 0, 9))
                 out[k] = as_stock_hid_descriptor(out[k])
-            # Accepted by both; only OpenShift acts on it (test_set_report_runs_commands).
+            # Accepted by both; only OpenShifter acts on it (test_set_report_runs_commands).
             out.append(r.control(0x21, 0x09, 0x0224, 0, 9, bytes([0x24, 0x20, 0, 0, 0, 0, 0x44, 0x55, 0x66])))
             return out
         a, b = self.both(sc)

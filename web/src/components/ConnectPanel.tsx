@@ -32,7 +32,7 @@ function Help({ title, children, defaultOpen }: { title: string; children: React
   )
 }
 
-const commands = `sudo tee /etc/udev/rules.d/70-openshift.rules >/dev/null <<'EOF'
+const commands = `sudo tee /etc/udev/rules.d/70-openshifter.rules >/dev/null <<'EOF'
 ${UDEV_RULE}EOF
 sudo udevadm control --reload-rules`
 
@@ -59,9 +59,9 @@ export function ConnectPanel({ supported, busy, error, onConnect, demoHref }: {
     <div className="mx-auto max-w-2xl">
       <h1 className="text-3xl/10 font-semibold tracking-tight sm:text-4xl/[3rem]">Set up your VelocityOne Multi-Shift</h1>
       <p className="mt-4 max-w-prose text-base/7 text-zinc-700 dark:text-zinc-300">
-        OpenShift is open firmware for the Turtle Beach VelocityOne Multi-Shift. This page installs it over USB,
+        OpenShifter is open firmware for the Turtle Beach VelocityOne Multi-Shift. This page installs it over USB,
         changes the LED colour and the high/low button, and calibrates the lever. A shifter with stock firmware
-        works too: connect it to install OpenShift.
+        works too: connect it to install OpenShifter.
       </p>
 
       <div className="mt-8 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-zinc-950/5 sm:p-6 dark:bg-zinc-800/60 dark:ring-white/10">
@@ -101,7 +101,7 @@ export function ConnectPanel({ supported, busy, error, onConnect, demoHref }: {
         </Help>
         <Help title="What an update changes">
           <p>An update replaces the firmware and erases the settings and the calibration, with stock firmware and
-            with OpenShift alike. The bootloader that receives updates is never written, so an interrupted update can
+            with OpenShifter alike. The bootloader that receives updates is never written, so an interrupted update can
             be started again.</p>
         </Help>
       </div>

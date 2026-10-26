@@ -1,6 +1,6 @@
-/* OpenShift: clocks, pins, time base, reset. SPDX-License-Identifier: MIT */
-#ifndef OPENSHIFT_BOARD_H
-#define OPENSHIFT_BOARD_H
+/* OpenShifter: clocks, pins, time base, reset. SPDX-License-Identifier: MIT */
+#ifndef OPENSHIFTER_BOARD_H
+#define OPENSHIFTER_BOARD_H
 
 #include <stdint.h>
 
@@ -17,7 +17,7 @@ void delay_ms(uint32_t ms);
 
 /* Stock calibrates its SysTick delay for SystemCoreClock = 72 MHz but runs
  * the AIR32 PLL at 216 MHz, so its delay_ms(n) lasts n/3 ms on the unit.
- * OpenShift keeps those effective timings. */
+ * OpenShifter keeps those effective timings. */
 #define STOCK_MS(n) (((n) + 2u) / 3u)
 void delay_cycles(uint32_t n);
 __attribute__((noreturn)) void board_reset(void);

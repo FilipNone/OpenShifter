@@ -1,8 +1,8 @@
 # VelocityOne Multi-Shift: update protocol and USB interface
 
 Sources:
-- the update code in VelocityOne Tuner 1.1.13.0 (.NET; decompiled)
-- the stock firmware image TBRS004-20241224 (disassembled, then run in the emulator under `tests/emu`)
+- the update code in VelocityOne Tuner 1.1.13.0, studied to make this project interoperate with the shifter
+- the stock firmware image TBRS004-20241224, studied the same way and run in the emulator under `tests/emu`
 - read-only observation of a stock unit
 
 Hardware: an AIR32F103 (STM32F103-compatible Cortex-M3) with an MLX90393 magnetic sensor, RGB LEDs and USB full speed.
@@ -30,23 +30,23 @@ Settings page, as 16-bit halfwords:
 | 0x2a to 0x36 | 13 auxiliary bytes (`24 23`) |
 | 0x37 to 0x3e | per-gear match radius |
 | 0x3f, 0x40 | sequential thresholds in y: lever pushed forward (positive), pulled back (negative) |
-| 0x50 | OpenShift options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on, bit 4 neutral button on (0.5.0) |
-| 0x51 to 0x53 | OpenShift LED colour R, G, B |
-| 0x54 to 0x56 | OpenShift white balance gains R, G, B |
+| 0x50 | OpenShifter options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on, bit 4 neutral button on (0.5.0) |
+| 0x51 to 0x53 | OpenShifter LED colour R, G, B |
+| 0x54 to 0x56 | OpenShifter white balance gains R, G, B |
 | 0x63 | `0x1254` once calibration is complete |
 
-Stock never reads or writes halfwords 0x41 to 0x62. OpenShift uses 0x50 to 0x56.
+Stock never reads or writes halfwords 0x41 to 0x62. OpenShifter uses 0x50 to 0x56.
 Without the `0xA5` marker in halfword 0x50 they mean the defaults: logo off,
 high/low as a button, colour 255 182 78 (warm orange), gamma off, gains
 255 162 96, neutral button off. The marker is there
 because the page can come back from an update as zeros, not only as `0xFFFF`:
-OpenShift 0.2.0 read a zeroed page as colour 0 0 0, which turned every LED off.
+OpenShifter 0.2.0 read a zeroed page as colour 0 0 0, which turned every LED off.
 
-Stock assumes 2 KB flash pages and rewrites halfwords 0 to 0x3ff. OpenShift preserves everything outside halfwords 0 to 99.
+Stock assumes 2 KB flash pages and rewrites halfwords 0 to 0x3ff. OpenShifter preserves everything outside halfwords 0 to 99.
 
 ## Update protocol (bootloader)
 
-Observed on a real unit (stock to stock, flashed from Linux with `tools/openshift_flash.py`, 2026-10-20):
+Observed on a real unit (stock to stock, flashed from Linux with `tools/openshifter_flash.py`, 2026-10-20):
 
 - The bootloader enumerates as `10f5:7097`, bcdDevice 0.03, with the same manufacturer, product and serial strings as the application. It is a HID device (`hid-generic` binds it).
 - The whole update took about 13 s from `24 00` until the application was back.
@@ -63,9 +63,9 @@ Tuner sends it on the interrupt OUT endpoint.
 | bootloader | `24 03` | update complete; the application starts and enumerates as `10f5:7096` |
 
 Commands are zero-padded to 64 bytes, which is how Windows hidapi sends a
-2-byte buffer to a 64-byte report. Tuner does not compute or check an MD5,
-checksum or signature anywhere. If Tuner
-finds the shifter already in update mode, it starts at `24 01`.
+2-byte buffer to a 64-byte report. Tuner does not compute or check a checksum
+or signature. If Tuner finds the shifter already in update mode, it starts
+at `24 01`.
 
 ### What is not known
 
@@ -76,7 +76,7 @@ These points are inferred, not observed:
 - **What clears the stay-in-bootloader flag.** It is probably `24 03`. If so, an interrupted update leaves the unit in update mode, and the flasher's retry advice depends on that.
 - **Its report descriptor.** The flasher refuses to erase if `10f5:7097` does not declare output report `0x24`.
 
-## Application USB interface (stock and OpenShift)
+## Application USB interface (stock and OpenShifter)
 
 The device descriptor:
 - `10f5:7096`, bcdDevice 1.11
@@ -90,12 +90,12 @@ application collections nested in the Joystick collection, none with a usage;
 16 bits of buttons for 11 button usages; and report 0x24 as usage 0x01 of the
 Generic Desktop page. On Linux that gives buttons `BTN_0` and up instead of
 `BTN_TRIGGER` and up, no `ID_INPUT_JOYSTICK` tag from udev, and a `REL_MISC`
-axis for report 0x24. OpenShift 0.4.0 and newer send one Joystick
+axis for report 0x24. OpenShifter 0.4.0 and newer send one Joystick
 application collection: 12 buttons and 4 constant padding bits, the
 16-bit Z axis, and report 0x24 in and out on vendor page `0xFF00`, which
 Linux's HID input driver ignores. The top-level usage (Generic Desktop,
 Joystick) and the input and output report IDs and sizes are the same as
-stock's. OpenShift 0.4.0 and newer add feature report 0x25 (below).
+stock's. OpenShifter 0.4.0 and newer add feature report 0x25 (below).
 
 In 0.4.0 the 12 button bits are buttons 1 to 12. From 0.5.0 they are buttons
 2 to 13, and the next bit (`buttons` bit 4) is button 1, the neutral button,
@@ -111,9 +111,9 @@ Input reports, sent every 2 ms:
     bit 1 with it pushed forward, bit 2 is button A (high/low). Pulling back
     shifts up, so bit 0 is shift up and bit 1 shift down; the firmware
     sources call them `seq_down` and `seq_up` the other way round.
-    OpenShift adds bit 3, the handbrake button (B) while the switch is in
+    OpenShifter adds bit 3, the handbrake button (B) while the switch is in
     H; its report descriptor declares more buttons than stock's 11 (see
-    above). OpenShift 0.5.0 adds bit 4, the neutral button: set in
+    above). OpenShifter 0.5.0 adds bit 4, the neutral button: set in
     H-pattern mode while no gear is engaged, when turned on with `24 35 1`.
     Bits 5 to 7 are always 0.
     With high/low set to toggle, bit 2 is the latched state.
@@ -129,8 +129,8 @@ Input reports, sent every 2 ms:
   | 13 + 6k | gear k+1 x, y, big-endian |
   | 17, 29, 30, 35, 36, 41, 42, 47 | per-gear radius / 8 |
   | 18 | flags: bit 0 button A, 1 button B, 2 switch in H, 3 handbrake mode, 4 lever pulled back, 5 lever pushed forward (the last two are `seq_down` and `seq_up` in the source) |
-  | 23 | OpenShift only (stock sends 0): bit 7 set, bit 0 logo LED on, bit 1 high/low is a toggle, bit 2 toggle is on, bit 3 gamma on, bit 4 neutral button on |
-  | 24, 53, 54 | OpenShift 0.3.0 and newer (stock sends 0): white balance gains R, G, B |
+  | 23 | OpenShifter only (stock sends 0): bit 7 set, bit 0 logo LED on, bit 1 high/low is a toggle, bit 2 toggle is on, bit 3 gamma on, bit 4 neutral button on |
+  | 24, 53, 54 | OpenShifter 0.3.0 and newer (stock sends 0): white balance gains R, G, B |
   | 48 | r / 8: the field strength at the sensor. With x and y it gives the lever's tilt, atan2(√(x² + y²) / 6.55, √(r² − (x² + y²) / 6.55²)) |
   | 59 to 62 | handbrake rest / pulled x |
   | 63 | mode |
@@ -146,7 +146,7 @@ Output report ID 0x24 (64 bytes) commands:
 | `24 23 b0…b12` | 13 auxiliary bytes; saved |
 | `24 24 g v` | per-gear radius byte for gear g = 1..8: shown in report 0x24 only, not stored (stock behaviour) |
 
-OpenShift adds these (stock ignores them):
+OpenShifter adds these (stock ignores them):
 
 | Command | Effect |
 |---|---|
@@ -158,15 +158,15 @@ OpenShift adds these (stock ignores them):
 | `24 35 v` | neutral button (0.5.0 and newer): 1 on, 0 off (default); saved |
 | `24 3F n` | light only LED n of the chain (0 to 2) in white, to find which LED is which; `24 3F FF` ends it. Not saved |
 
-`tools/openshift_ctl.py` sends all of these.
+`tools/openshifter_ctl.py` sends all of these.
 
-Feature report ID 0x25, 16 bytes, OpenShift 0.4.0 and newer: `25` followed by
+Feature report ID 0x25, 16 bytes, OpenShifter 0.4.0 and newer: `25` followed by
 the version string, for example `0.4.0`, padded with NULs. It is read with
 GET_REPORT (feature). Browsers cannot read the iConfiguration string, so the
-web tool uses this report to tell OpenShift versions apart. Stock firmware and
-older OpenShift versions do not declare it.
+web tool uses this report to tell OpenShifter versions apart. Stock firmware and
+older OpenShifter versions do not declare it.
 
-LEDs in OpenShift:
+LEDs in OpenShifter:
 
 | LED | Lit |
 |---|---|
@@ -188,10 +188,10 @@ Without a USB host, the unit streams 16-byte packets on USART1 (PA9) every 5 ms:
 
 ## Stock firmware quirks worth knowing
 
-- **Delays run a third of their nominal length.** Stock configures `delay_ms()` for a 72 MHz clock but runs the PLL at 216 MHz. OpenShift runs at 72 MHz and uses the effective durations (`STOCK_MS()` in `firmware/src/board.h`).
+- **Delays run a third of their nominal length.** Stock configures `delay_ms()` for a 72 MHz clock but runs the PLL at 216 MHz. OpenShifter runs at 72 MHz and uses the effective durations (`STOCK_MS()` in `firmware/src/board.h`).
 - **Control SET_REPORT is unsafe on stock.** A 64-byte SET_REPORT crashes stock (it jumps to address 0); short ones are ignored. Send commands on the interrupt OUT endpoint, as Tuner and hidraw do.
 - **GET_REPORT returns junk on stock:** a fixed buffer of unrelated RAM.
-- **Learning can capture other poses as gears.** Until the unit restarts with a complete calibration, gear learning keeps running. Holding the lever steady at about (−300, −1500), which is the handbrake-pulled target, is learned as gear 4 with a small radius, and the sequential up and down poses as gears 3 and 4. Calibrate targets 9 and 10 and the sequential thresholds before the gears, then restart the unit. `openshift_ctl.py calibrate` uses that order.
-- **Stock's position updates only every ~42 ms.** Stock reads the sensor every 2 ms, but it writes 2 to register 0x1d at start-up, the burst interval in 20 ms steps if the sensor follows the MLX90393. On a unit, x and y then change only every 40 to 44 ms, which adds up to 42 ms to every gear change on top of the 40 ms debounce. OpenShift 0.5.0 and newer write 0 there, and with a fresh position every 2 ms debounce gears and sequential shifts over 10 ms. A gear change now shows up after about 12 ms instead of 40 to 84 ms.
+- **Learning can capture other poses as gears.** Until the unit restarts with a complete calibration, gear learning keeps running. Holding the lever steady at about (−300, −1500), which is the handbrake-pulled target, is learned as gear 4 with a small radius, and the sequential up and down poses as gears 3 and 4. Calibrate targets 9 and 10 and the sequential thresholds before the gears, then restart the unit. `openshifter_ctl.py calibrate` uses that order.
+- **Stock's position updates only every ~42 ms.** Stock reads the sensor every 2 ms, but it writes 2 to register 0x1d at start-up, the burst interval in 20 ms steps if the sensor follows the MLX90393. On a unit, x and y then change only every 40 to 44 ms, which adds up to 42 ms to every gear change on top of the 40 ms debounce. OpenShifter 0.5.0 and newer write 0 there, and with a fresh position every 2 ms debounce gears and sequential shifts over 10 ms. A gear change now shows up after about 12 ms instead of 40 to 84 ms.
 - **A unit powered up in gear shows no gear** until the lever has passed through neutral: the first pose seen is taken as neutral.
-- **Stock can skip neutral between gears.** When the lever crosses neutral faster than the debounce (40 ms on stock), stock's report 1 goes from one gear bit straight to the next. Linux's HID input driver sends the changes in a report in button order, so on a downshift a game gets the new gear's press before the old gear's release, and a game that selects neutral on release ends up in neutral. OpenShift 0.5.0 and newer report 10 ms of neutral in between.
+- **Stock can skip neutral between gears.** When the lever crosses neutral faster than the debounce (40 ms on stock), stock's report 1 goes from one gear bit straight to the next. Linux's HID input driver sends the changes in a report in button order, so on a downshift a game gets the new gear's press before the old gear's release, and a game that selects neutral on release ends up in neutral. OpenShifter 0.5.0 and newer report 10 ms of neutral in between.

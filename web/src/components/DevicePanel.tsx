@@ -13,7 +13,7 @@ export function firmwareLabel(fw: Firmware | null): string {
   if (!fw) return 'Reading…'
   if (fw.kind === 'bootloader') return 'Update mode'
   if (fw.kind === 'stock') return 'Stock firmware'
-  return fw.version ? `OpenShift ${fw.version}` : fw.balance ? 'OpenShift 0.3' : 'OpenShift 0.2'
+  return fw.version ? `OpenShifter ${fw.version}` : fw.balance ? 'OpenShifter 0.3' : 'OpenShifter 0.2'
 }
 
 // Gate coordinates to SVG: columns 50 apart, columns 70 tall each way.

@@ -32,6 +32,8 @@ jobs:
             build-mode: none
           - language: actions
             build-mode: none
+          - language: javascript-typescript
+            build-mode: none
 
     steps:
       - name: Check out repository

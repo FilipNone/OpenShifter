@@ -61,6 +61,6 @@ computer** and pick `firmware/build/openshifter.bin`.
 
 ## License
 
-MIT, see [LICENSE](LICENSE). OpenShifter comes with no warranty.
+MIT, see [LICENSE](LICENSE). OpenShifter comes with no warranty. The license covers the OpenShifter sources in this repository. Vendor firmware, VelocityOne Tuner and their contents are not part of this project and are not covered by it.
 
 OpenShifter is not made or endorsed by Turtle Beach. Turtle Beach and VelocityOne are trademarks of Turtle Beach Corporation, used here only to name the shifter this firmware runs on. This repository and the web tool contain no Turtle Beach firmware or software: to go back to stock you use the image that comes with VelocityOne Tuner.

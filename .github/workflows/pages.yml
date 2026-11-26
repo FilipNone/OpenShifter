@@ -2,14 +2,12 @@ name: Pages
 
 # Builds the browser tool in web/ with the firmware file from the latest
 # release, checked against its SHA-256, and publishes it to GitHub Pages.
-# Publishing a release redeploys the site if the github-pages environment
-# allows v* tags. Enable Pages with "GitHub Actions" as the source in the
-# repository settings.
-#
-# Pages keeps the first deployment of each build version, and
-# actions/deploy-pages always uses the commit as the version. A release
-# published on the commit main was last deployed from then changed nothing
-# (0.6.0 did that), so the deploy step below gives every run its own version.
+# Publishing a release runs it again (the github-pages environment allows v*
+# tags), but Pages keeps the first deployment of each commit and only takes
+# a commit as the build version (actions/deploy-pages#383). A release on a
+# commit that was already deployed, the usual case, leaves the site as it
+# was; the next push to main publishes it. Enable Pages with "GitHub
+# Actions" as the source in the repository settings.
 
 on:
   push:
@@ -63,13 +61,9 @@ jobs:
         run: npm run build:site
 
       - name: Upload site
-        id: upload
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: web/dist
-
-    outputs:
-      artifact_id: ${{ steps.upload.outputs.artifact_id }}
 
   deploy:
     name: Deploy
@@ -84,28 +78,6 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-      # The same API calls as actions/deploy-pages, with a build version of
-      # its own for each run.
       - name: Deploy to GitHub Pages
         id: deployment
-        env:
-          GH_TOKEN: ${{ github.token }}
-          ARTIFACT_ID: ${{ needs.build.outputs.artifact_id }}
-          BUILD_VERSION: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-        run: |
-          oidc=$(curl -sSf -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL" | jq -r .value)
-          status_url=$(gh api "repos/$GITHUB_REPOSITORY/pages/deployments" \
-            -F artifact_id="$ARTIFACT_ID" -f pages_build_version="$BUILD_VERSION" -f oidc_token="$oidc" -q .status_url)
-          echo "deployment $BUILD_VERSION"
-          status=
-          for _ in $(seq 100); do
-            sleep 5
-            status=$(gh api "$status_url" -q .status || echo unknown_status)
-            echo "status: $status"
-            case $status in
-              succeed) break ;;
-              deployment_failed|deployment_content_failed|deployment_cancelled|deployment_lost) exit 1 ;;
-            esac
-          done
-          [ "$status" = succeed ] || { echo "no result after 500 s"; exit 1; }
-          echo "page_url=$(gh api "repos/$GITHUB_REPOSITORY/pages" -q .html_url)" >> "$GITHUB_OUTPUT"
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

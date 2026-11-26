@@ -2,9 +2,12 @@ name: Pages
 
 # Builds the browser tool in web/ with the firmware file from the latest
 # release, checked against its SHA-256, and publishes it to GitHub Pages.
-# Publishing a release redeploys the site if the github-pages environment
-# allows v* tags. Enable Pages with "GitHub Actions" as the source in the
-# repository settings.
+# Publishing a release runs it again (the github-pages environment allows v*
+# tags), but Pages keeps the first deployment of each commit and only takes
+# a commit as the build version (actions/deploy-pages#383). A release on a
+# commit that was already deployed, the usual case, leaves the site as it
+# was; the next push to main publishes it. Enable Pages with "GitHub
+# Actions" as the source in the repository settings.
 
 on:
   push:

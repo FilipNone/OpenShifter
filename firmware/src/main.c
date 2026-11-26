@@ -13,6 +13,12 @@
  *   - SysTick sees PendSV or the main loop stalled for 3 s;
  *   - the host reset the bus 6+ times without ever configuring the device;
  *   - the PLL could not be configured.
+ * If the bootloader flag cannot be written, the unit leaves USB and blinks
+ * red instead (flash.c).
+ *
+ * A settings change reaches flash 1 s after the last change, at a limited
+ * rate (sh_saves_* in shifter.c), because every write erases the page that
+ * holds the bootloader flag.
  */
 #include "shifter.h"
 #include "board.h"
@@ -27,7 +33,8 @@
 static shifter_t sh;
 static uint16_t st_loaded[SH_SETTINGS_HALFWORDS];    /* as read at boot */
 static uint16_t st_pending[SH_SETTINGS_HALFWORDS];   /* snapshot for the next write */
-static volatile uint8_t save_pending, boot_pending;
+static sh_saves_t saves;                              /* touch with interrupts off */
+static volatile uint8_t boot_pending;
 
 static volatile uint8_t sensor_ready, sensor_paused, sensor_off_timer, sensor_off_ticks;
 static volatile uint8_t asleep, led_dirty;
@@ -94,7 +101,7 @@ static void apply_actions(unsigned act)
         for (unsigned i = 0; i < SH_SETTINGS_HALFWORDS; i++)
             st_pending[i] = st_loaded[i];
         shifter_save(&sh, st_pending);
-        save_pending = 1;
+        sh_saves_changed(&saves, g_ms);
     }
     if (act & SH_ACT_BOOT) {
         led_dirty = 1;
@@ -206,6 +213,41 @@ void usb_lp_handler(void)
     usb_irq_handler();
 }
 
+/* ---- settings writes ------------------------------------------------------ */
+
+static void spent(void)
+{
+    irq_disable();
+    sh_saves_spent(&saves);
+    irq_enable();
+}
+
+/* Writes the settings when sh_saves_take() allows it. Returns 1 while a
+ * change is still waiting. */
+static int save_settings(void)
+{
+    uint16_t st[SH_SETTINGS_HALFWORDS];
+    irq_disable();
+    int due = sh_saves_take(&saves, g_ms, boot_pending);
+    if (due)
+        for (unsigned i = 0; i < SH_SETTINGS_HALFWORDS; i++)
+            st[i] = st_pending[i];
+    irq_enable();
+
+    if (due) {
+        int r = settings_write(st);
+        if (r)
+            spent();
+        if (r < 0 && settings_write(st))   /* one retry */
+            spent();
+    }
+
+    irq_disable();
+    int waiting = saves.pending;
+    irq_enable();
+    return waiting;
+}
+
 /* ---- startup -------------------------------------------------------------- */
 
 static int buttons_held_at_power_up(void)
@@ -220,6 +262,8 @@ static int buttons_held_at_power_up(void)
 
 int main(void)
 {
+    sh_saves_init(&saves);
+
     /* Exception priorities: SysTick 0 (highest), USB 1, PendSV 3. */
     SCB_SHPR3 = (PRIO_PENDSV << 4 << 16) | (0u << 24);
 
@@ -259,17 +303,9 @@ int main(void)
         else
             uart_enable();
 
-        if (save_pending) {
-            uint16_t st[SH_SETTINGS_HALFWORDS];
-            irq_disable();
-            for (unsigned i = 0; i < SH_SETTINGS_HALFWORDS; i++)
-                st[i] = st_pending[i];
-            save_pending = 0;
-            irq_enable();
-            settings_write(st);
-        }
+        int waiting = save_settings();
 
-        if (boot_pending && !save_pending) {
+        if (boot_pending && !waiting) {
             /* "24 00": show yellow, then hand over to the bootloader. */
             uint32_t t0 = g_ms;
             while ((led_dirty || leds_busy()) && g_ms - t0 < 200)

@@ -11,6 +11,7 @@ import math
 import os
 import pathlib
 import random
+import re
 import shutil
 import struct
 import subprocess
@@ -23,6 +24,17 @@ SHIM = ROOT / 'tests' / 'native' / 'shim.c'
 
 SH_FRAME_OK, SH_FRAME_EMPTY, SH_FRAME_POWER_OFF = 0, 1, 2
 SH_ACT_SAVE, SH_ACT_LED, SH_ACT_BOOT = 1, 2, 4
+
+
+def _define(name):
+    m = re.search(rf'^#define {name}\s+(\d+)u?\b', (SRC / 'shifter.h').read_text(), re.M)
+    return int(m.group(1))
+
+
+# Settings write timing, from shifter.h (also used by test_emulated.py).
+SAVE_QUIET_MS = _define('SH_SAVE_QUIET_MS')
+SAVE_BURST = _define('SH_SAVE_BURST')
+SAVE_REFILL_MS = _define('SH_SAVE_REFILL_MS')
 
 lib = None
 _tmp = None
@@ -55,7 +67,12 @@ def setUpModule():
             ('shifter_command', ctypes.c_uint, [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint]),
             ('shifter_buttons', ctypes.c_uint, [ctypes.c_void_p, i32, i32, i32]),
             ('shifter_led_grb', None, [ctypes.c_void_p, i32, ctypes.c_char_p]),
-            ('shifter_report36', None, [ctypes.c_void_p, ctypes.c_char_p])):
+            ('shifter_report36', None, [ctypes.c_void_p, ctypes.c_char_p]),
+            ('sh_saves_init', None, [ctypes.c_void_p]),
+            ('sh_saves_changed', None, [ctypes.c_void_p, u32]),
+            ('sh_saves_take', i32, [ctypes.c_void_p, u32, i32]),
+            ('sh_saves_spent', None, [ctypes.c_void_p]),
+            ('t_saves_sizeof', ctypes.c_uint, [])):
         f = getattr(lib, name)
         f.restype, f.argtypes = res, args
 
@@ -502,6 +519,99 @@ class Options(CoreHelpers, unittest.TestCase):
         self.assertEqual(self.leds(s), [WARM, WARM, OFF])
         self.cmd(s, 0x24, 0x00)
         self.assertEqual(self.leds(s), [led(255, 255, 0)] * 3)
+
+
+class Saves(ctypes.Structure):
+    _fields_ = [('changed_ms', ctypes.c_uint32), ('refill_ms', ctypes.c_uint32),
+                ('pending', ctypes.c_uint8), ('allowance', ctypes.c_uint8)]
+
+
+class SettingsWrites(unittest.TestCase):
+    """When main.c writes the settings page (sh_saves_*)."""
+
+    def setUp(self):
+        self.assertEqual(ctypes.sizeof(Saves), lib.t_saves_sizeof())
+        self.v = Saves()
+        lib.sh_saves_init(ctypes.byref(self.v))
+
+    def changed(self, t):
+        lib.sh_saves_changed(ctypes.byref(self.v), t % 2**32)
+
+    def take(self, t, urgent=0):
+        return lib.sh_saves_take(ctypes.byref(self.v), t % 2**32, urgent)
+
+    def write(self, t):
+        """A change at t, written once it is due; returns the time of the write."""
+        self.changed(t)
+        t += SAVE_QUIET_MS
+        while not self.take(t):
+            t += 1000
+        lib.sh_saves_spent(ctypes.byref(self.v))
+        return t
+
+    def test_nothing_to_write(self):
+        self.assertEqual(self.take(0), 0)
+        self.assertEqual(self.take(10**6, urgent=1), 0)
+
+    def test_written_once_changes_stop(self):
+        self.changed(0)
+        self.changed(400)
+        self.changed(900)
+        self.assertEqual(self.take(900 + SAVE_QUIET_MS - 1), 0)
+        self.assertEqual(self.take(900 + SAVE_QUIET_MS), 1)
+        self.assertEqual(self.take(900 + SAVE_QUIET_MS + 1), 0, 'written twice')
+
+    def test_urgent_write_skips_the_wait_and_the_limit(self):
+        for _ in range(SAVE_BURST):
+            lib.sh_saves_spent(ctypes.byref(self.v))
+        self.changed(5)
+        self.assertEqual(self.take(5), 0)
+        self.assertEqual(self.take(5, urgent=1), 1)
+        self.assertEqual(self.v.allowance, 0)
+
+    def test_limit_after_a_burst(self):
+        t = 0
+        for _ in range(SAVE_BURST):
+            t = self.write(t)
+        self.assertEqual(self.v.allowance, 0)
+        # The allowance started to drop with the first write, at SAVE_QUIET_MS.
+        first = SAVE_QUIET_MS
+        self.changed(t)
+        self.assertEqual(self.take(first + SAVE_REFILL_MS - 1), 0)
+        self.assertEqual(self.take(first + SAVE_REFILL_MS), 1)
+        lib.sh_saves_spent(ctypes.byref(self.v))
+        # From then on, one write per SAVE_REFILL_MS.
+        t, times = first + SAVE_REFILL_MS, []
+        for _ in range(3):
+            t = self.write(t)
+            times.append(t)
+        self.assertEqual(times, [first + k * SAVE_REFILL_MS for k in (2, 3, 4)])
+
+    def test_allowance_comes_back(self):
+        t = 0
+        for _ in range(SAVE_BURST):
+            t = self.write(t)
+        self.take(t + SAVE_BURST * SAVE_REFILL_MS)
+        self.assertEqual(self.v.allowance, SAVE_BURST)
+        # Time spent with a full allowance is not stored up for later.
+        self.take(t + 10**7)
+        t = self.write(t + 10**7)
+        self.take(t + SAVE_REFILL_MS - 1)
+        self.assertEqual(self.v.allowance, SAVE_BURST - 1)
+        self.take(t + SAVE_REFILL_MS)
+        self.assertEqual(self.v.allowance, SAVE_BURST)
+
+    def test_clock_wraps(self):
+        start = 2**32 - 300
+        self.changed(start)
+        self.assertEqual(self.take(start + SAVE_QUIET_MS - 1), 0)
+        self.assertEqual(self.take(start + SAVE_QUIET_MS), 1)
+        t = start
+        for _ in range(SAVE_BURST):
+            t = self.write(t)
+        self.changed(t)
+        self.assertEqual(self.take(start + SAVE_QUIET_MS + SAVE_REFILL_MS - 1), 0)
+        self.assertEqual(self.take(start + SAVE_QUIET_MS + SAVE_REFILL_MS), 1)
 
 
 if __name__ == '__main__':

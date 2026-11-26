@@ -583,6 +583,7 @@ class Machine:
         self.flash_keys = 0
         self.flash_events = []
         self.flash_violations = []
+        self.flash_worn = False   # True: the settings page refuses every erase and program
         self.sensor = Sensor()
         self.buttons = {'PA4': False, 'PA5': False, 'PB10': False}
         self.usb = UsbDevice(self)
@@ -632,6 +633,11 @@ class Machine:
     def _flash_write_hook(self, uc, access, addr, size, value, ud):
         cr = self.regs[0x40022010]
         old = struct.unpack('<H', uc.mem_read(addr & ~1, 2))[0]
+        if self.flash_worn and addr >= SETTINGS_ADDR:
+            self.flash_events.append(('program-failed', addr, value))
+            self.regs[0x4002200C] |= 0x04
+            self._undo = (addr & ~1, old)
+            return
         ok = (cr & 1) and not (cr & 0x80) and size == 2 and not addr & 1 and (old == 0xFFFF or value == 0)
         if addr < SETTINGS_ADDR:
             ok = False
@@ -666,6 +672,9 @@ class Machine:
                 page = self.regs[0x40022014] & ~(self.page_size - 1)
                 if page < SETTINGS_ADDR or page >= FLASH_BASE + FLASH_SIZE:
                     self.flash_violations.append(('erase', hex(page)))
+                    self.regs[0x4002200C] |= 0x10
+                elif self.flash_worn:
+                    self.flash_events.append(('erase-failed', page))
                     self.regs[0x4002200C] |= 0x10
                 else:
                     self.uc.mem_write(page, b'\xff' * self.page_size)

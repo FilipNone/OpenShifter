@@ -44,6 +44,8 @@ OpenShifter 0.2.0 read a zeroed page as colour 0 0 0, which turned every LED off
 
 Stock assumes 2 KB flash pages and rewrites halfwords 0 to 0x3ff. OpenShifter preserves everything outside halfwords 0 to 99.
 
+Every way into update mode (`24 00`, both buttons at power-up, a fault, a stall, a host that never configures the unit) writes the flag in halfword 0. If that write fails twice, OpenShifter leaves USB and blinks all LEDs red instead of resetting, because a reset would only start the application again.
+
 ## Update protocol (bootloader)
 
 Observed on a real unit (stock to stock, flashed from Linux with `tools/openshifter_flash.py`, 2026-10-20):
@@ -159,6 +161,10 @@ OpenShifter adds these (stock ignores them):
 | `24 3F n` | light only LED n of the chain (0 to 2) in white, to find which LED is which; `24 3F FF` ends it. Not saved |
 
 `tools/openshifter_ctl.py` sends all of these.
+
+Commands marked "saved" write the settings page in flash, and every write erases the page first. A flash page only takes so many erases, and this one also holds the bootloader flag, so OpenShifter writes a change once nothing has changed for 1 second. Up to 16 writes can follow each other; after that, one more is allowed each minute and later changes wait in memory. `24 00` writes a waiting change at once. A change that has not been written yet is lost if the shifter loses power. OpenShifter 0.5.0 and older wrote every change at once, like stock.
+
+To change the LED colour continuously, for example to show RPM or the gear, use `24 20`. It is never saved.
 
 Feature report ID 0x25, 16 bytes, OpenShifter 0.4.0 and newer: `25` followed by
 the version string, for example `0.4.0`, padded with NULs. It is read with

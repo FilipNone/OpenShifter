@@ -26,3 +26,5 @@ void t_match(const shifter_t *s, int i, int *x, int *y, int *r)
 }
 
 int t_settings_valid(const shifter_t *s) { return s->settings_valid; }
+
+unsigned t_saves_sizeof(void) { return sizeof(sh_saves_t); }

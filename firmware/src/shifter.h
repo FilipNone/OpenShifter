@@ -162,6 +162,30 @@ void     shifter_uart_packet(const shifter_t *s, uint8_t out[16]);
  * asleep. */
 void     shifter_led_grb(const shifter_t *s, int asleep, uint8_t out[9]);
 
+/* When to write the settings. Every write erases the settings page, which
+ * also holds the bootloader flag, and a flash page only takes so many
+ * erases. A change is written once nothing has changed for
+ * SH_SAVE_QUIET_MS. Up to SH_SAVE_BURST writes can follow each other;
+ * after that, one more is allowed every SH_SAVE_REFILL_MS. */
+#define SH_SAVE_QUIET_MS  1000u
+#define SH_SAVE_BURST     16u
+#define SH_SAVE_REFILL_MS 60000u
+
+typedef struct {
+    uint32_t changed_ms;     /* time of the last change */
+    uint32_t refill_ms;      /* time the allowance last grew, or was full */
+    uint8_t  pending;        /* a change is waiting to be written */
+    uint8_t  allowance;      /* writes left before the limit applies */
+} sh_saves_t;
+
+void     sh_saves_init(sh_saves_t *v);
+void     sh_saves_changed(sh_saves_t *v, uint32_t now_ms);
+/* 1 if the waiting change should be written now, and clears it. `urgent`
+ * (update mode was asked for) skips both the wait and the limit. */
+int      sh_saves_take(sh_saves_t *v, uint32_t now_ms, int urgent);
+/* Call after each write that erased the page. */
+void     sh_saves_spent(sh_saves_t *v);
+
 /* Exposed for tests. */
 uint32_t sh_isqrt(uint32_t v);
 void     sh_sincos_q30(uint32_t angle, int32_t *sin_q30, int32_t *cos_q30);

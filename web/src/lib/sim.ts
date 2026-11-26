@@ -5,9 +5,9 @@ import type { Bus, InputReport, ShifterDevice } from './hid'
 import { findOpenShifterVersion } from './image'
 import {
   APP_MAX, BTN_NEUTRAL, BTN_SHIFT_DOWN, BTN_SHIFT_UP, CHUNK, CHUNK_GAP_MS, CMD_BALANCE, CMD_BOOT, CMD_CALIBRATE, CMD_COLOR, CMD_DONE, CMD_ERASE,
-  CMD_GAMMA, CMD_HIGHLOW, CMD_LED, CMD_LOGO, CMD_NEUTRAL, CMD_WRITE, DEFAULT_COLOR, DEFAULT_GAINS, ERASE_WAIT_MS,
-  MODE_H, MODE_SEQ, OPT_GAMMA, OPT_LOGO, OPT_NEUTRAL, OPT_PRESENT, OPT_RANGE_ON, OPT_RANGE_TOGGLE, PID_APP, PID_BOOT,
-  REPORT_ID, REPORT_LEN, VERSION_REPORT_ID, compareVersions, type Point, type RGB,
+  CMD_GAMMA, CMD_HIGHLOW, CMD_JITTER, CMD_LED, CMD_LOGO, CMD_NEUTRAL, CMD_WRITE, DEFAULT_COLOR, DEFAULT_GAINS, ERASE_WAIT_MS,
+  MODE_H, MODE_SEQ, OPT_GAMMA, OPT_JITTER_SHIFT, OPT_LOGO, OPT_NEUTRAL, OPT_PRESENT, OPT_RANGE_ON, OPT_RANGE_TOGGLE, PID_APP, PID_BOOT,
+  RAW_REPORT_ID, REPORT_ID, REPORT_LEN, VERSION_REPORT_ID, compareVersions, type Point, type RGB,
 } from './protocol'
 
 export interface Clock {
@@ -87,6 +87,7 @@ export class SimShifter {
   highlowOn = false
   gamma = false
   neutralButton = false
+  antiJitter = 0
   switchH = true
   lever: Point = POSES.neutral
   radius = RADIUS.neutral
@@ -243,6 +244,7 @@ export class SimShifter {
       case CMD_BALANCE: this.gains = [a, b, c]; void e; break
       case CMD_GAMMA: this.gamma = a !== 0; break
       case CMD_NEUTRAL: if (compareVersions(this.version!, '0.5.0') >= 0) this.neutralButton = a !== 0; break
+      case CMD_JITTER: if (compareVersions(this.version!, '0.6.0') >= 0 && a <= 3) this.antiJitter = a; break
     }
   }
 
@@ -261,6 +263,7 @@ export class SimShifter {
     this.highlowToggle = false
     this.gamma = false
     this.neutralButton = false
+    this.antiJitter = 0
     this.gears = this.gears.map(() => [0, 0] as Point)
     this.neutral = [0, 0]
     this.handbrake = [0, 0]
@@ -293,7 +296,7 @@ export class SimShifter {
     if (this.isOpenShifter) {
       r[23] = OPT_PRESENT | (this.logo ? OPT_LOGO : 0) | (this.highlowToggle ? OPT_RANGE_TOGGLE : 0) |
         (this.highlowOn ? OPT_RANGE_ON : 0) | (this.gamma ? OPT_GAMMA : 0) |
-        (this.neutralButton ? OPT_NEUTRAL : 0)
+        (this.neutralButton ? OPT_NEUTRAL : 0) | this.antiJitter << OPT_JITTER_SHIFT
       r[24] = this.gains[0]
       r[53] = this.gains[1]
       r[54] = this.gains[2]
@@ -326,9 +329,15 @@ export class SimShifter {
     if (!this.present || this.pid !== PID_APP) return
     const st = this.status()
     const i = this.inputs()
+    // Report 0x26 while anti-jitter is on. No noise in the simulator: the raw
+    // lever is the reported one.
+    const raw = this.antiJitter ? new DataView(new ArrayBuffer(4)) : null
+    raw?.setInt16(0, this.lever[0])
+    raw?.setInt16(2, this.lever[1])
     for (const l of this.listeners) {
       l({ reportId: REPORT_ID, data: new DataView(st.buffer, 1, 63) })
       l({ reportId: 1, data: new DataView(i.buffer) })
+      if (raw) l({ reportId: RAW_REPORT_ID, data: raw })
     }
   }
 }

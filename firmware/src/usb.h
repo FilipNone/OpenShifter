@@ -15,6 +15,9 @@ extern volatile uint16_t usb_reset_count;
 void usb_reconnect(void);
 /* Drop off the bus and stay off. */
 void usb_detach(void);
+/* Around a flash erase or write: EP0 ignores the host, EP1 answers NAK. */
+void usb_pause(void);
+void usb_unpause(void);
 void usb_init(void);
 void usb_irq_handler(void);
 
@@ -31,6 +34,6 @@ unsigned usb_get_report(uint8_t report_id, uint8_t *out);
 /* Exposed for tests. */
 extern const uint8_t usb_device_desc[18];
 extern const uint8_t usb_config_desc[41];
-extern const uint8_t usb_report_desc[89];
+extern const uint8_t usb_report_desc[97];
 
 #endif

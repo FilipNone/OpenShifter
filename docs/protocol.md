@@ -30,7 +30,7 @@ Settings page, as 16-bit halfwords:
 | 0x2a to 0x36 | 13 auxiliary bytes (`24 23`) |
 | 0x37 to 0x3e | per-gear match radius |
 | 0x3f, 0x40 | sequential thresholds in y: lever pushed forward (positive), pulled back (negative) |
-| 0x50 | OpenShifter options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on, bit 4 neutral button on (0.5.0) |
+| 0x50 | OpenShifter options: high byte `0xA5` marks them as set; bit 0 logo LED on, bit 1 high/low button is a toggle, bit 3 gamma correction on, bit 4 neutral button on (0.5.0), bits 5 and 6 anti-jitter level (0.6.0) |
 | 0x51 to 0x53 | OpenShifter LED colour R, G, B |
 | 0x54 to 0x56 | OpenShifter white balance gains R, G, B |
 | 0x63 | `0x1254` once calibration is complete |
@@ -38,7 +38,7 @@ Settings page, as 16-bit halfwords:
 Stock never reads or writes halfwords 0x41 to 0x62. OpenShifter uses 0x50 to 0x56.
 Without the `0xA5` marker in halfword 0x50 they mean the defaults: logo off,
 high/low as a button, colour 255 182 78 (warm orange), gamma off, gains
-255 162 96, neutral button off. The marker is there
+255 162 96, neutral button off, anti-jitter none. The marker is there
 because the page can come back from an update as zeros, not only as `0xFFFF`:
 OpenShifter 0.2.0 read a zeroed page as colour 0 0 0, which turned every LED off.
 
@@ -97,7 +97,7 @@ application collection: 12 buttons and 4 constant padding bits, the
 16-bit Z axis, and report 0x24 in and out on vendor page `0xFF00`, which
 Linux's HID input driver ignores. The top-level usage (Generic Desktop,
 Joystick) and the input and output report IDs and sizes are the same as
-stock's. OpenShifter 0.4.0 and newer add feature report 0x25 (below).
+stock's. OpenShifter 0.4.0 and newer add feature report 0x25, and 0.6.0 and newer input report 0x26 (below).
 
 In 0.4.0 the 12 button bits are buttons 1 to 12. From 0.5.0 they are buttons
 2 to 13, and the next bit (`buttons` bit 4) is button 1, the neutral button,
@@ -131,7 +131,7 @@ Input reports, sent every 2 ms:
   | 13 + 6k | gear k+1 x, y, big-endian |
   | 17, 29, 30, 35, 36, 41, 42, 47 | per-gear radius / 8 |
   | 18 | flags: bit 0 button A, 1 button B, 2 switch in H, 3 handbrake mode, 4 lever pulled back, 5 lever pushed forward (the last two are `seq_down` and `seq_up` in the source) |
-  | 23 | OpenShifter only (stock sends 0): bit 7 set, bit 0 logo LED on, bit 1 high/low is a toggle, bit 2 toggle is on, bit 3 gamma on, bit 4 neutral button on |
+  | 23 | OpenShifter only (stock sends 0): bit 7 set, bit 0 logo LED on, bit 1 high/low is a toggle, bit 2 toggle is on, bit 3 gamma on, bit 4 neutral button on, bits 5 and 6 the anti-jitter level |
   | 24, 53, 54 | OpenShifter 0.3.0 and newer (stock sends 0): white balance gains R, G, B |
   | 48 | r / 8: the field strength at the sensor. With x and y it gives the lever's tilt, atan2(√(x² + y²) / 6.55, √(r² − (x² + y²) / 6.55²)) |
   | 59 to 62 | handbrake rest / pulled x |
@@ -158,6 +158,7 @@ OpenShifter adds these (stock ignores them):
 | `24 33 R G B s` | white balance: a gain per channel, 255 = full; saved when s is 1, live only when 0 |
 | `24 34 v` | gamma correction: 1 on, 0 off (default); saved |
 | `24 35 v` | neutral button (0.5.0 and newer): 1 on, 0 off (default); saved |
+| `24 36 v` | anti-jitter on the lever position (0.6.0 and newer): 0 none (default), 1 low, 2 medium, 3 high; saved |
 | `24 3F n` | light only LED n of the chain (0 to 2) in white, to find which LED is which; `24 3F FF` ends it. Not saved |
 
 `tools/openshifter_ctl.py` sends all of these.
@@ -166,11 +167,26 @@ Commands marked "saved" write the settings page in flash, and every write erases
 
 To change the LED colour continuously, for example to show RPM or the gear, use `24 20`. It is never saved.
 
+While the settings page is erased and written (about 25 ms), OpenShifter takes no USB packet: EP0 ignores the host, so a control request then fails, and EP1 answers NAK, so input reports pause. On a unit, control requests during the erase froze it, with interrupts off or not.
+
+Anti-jitter (`24 36`) steadies the lever position as the sensor reports it: x, y and z (s14). Everything else is worked out from those, so it applies to the gears, the sequential shifts, the handbrake axis, the x and y in report 0x24 and calibration. Each value runs through a running average of the last 2 samples (low and medium) or about 4 (high), then holds still until the average moves more than a band from it: 4, 8 or 16 units for x and y, 13, 16 or 20 for z. Going back the other way costs twice the band of free travel. If the average stays more than half a band away for 128 ms, the value moves to it, so a still lever reads within half a band of where it is. A change larger than 150 units in x or y, or 80 in z, passes at once, so shifts and a yanked handbrake are never late. Measured on a unit, x and y have a noise of about 2 (standard deviation) and z flickers by one step of its high byte (25 units). A single frame that jumps more than 600 in x or y, or 300 in z, from the one before is a bad read and is skipped; if the next frame agrees, it counts. With none (the default), the values are the raw ones, as on stock.
+
 Feature report ID 0x25, 16 bytes, OpenShifter 0.4.0 and newer: `25` followed by
 the version string, for example `0.4.0`, padded with NULs. It is read with
 GET_REPORT (feature). Browsers cannot read the iConfiguration string, so the
 web tool uses this report to tell OpenShifter versions apart. Stock firmware and
 older OpenShifter versions do not declare it.
+
+Input report ID 0x26, 5 bytes, OpenShifter 0.6.0 and newer: `26 x_hi x_lo y_hi y_lo`,
+the lever's x and y as the sensor read them, before anti-jitter. It is sent while anti-jitter
+is on, in every other slot of report 0x24, so the host gets no more reports than usual and
+report 0x24 comes every 4 ms instead of 2. With anti-jitter off, report 0x24 already has the
+raw reading. The web tool draws it under the position games see.
+
+Two earlier designs failed on a real unit with Chrome. Reading report 0x26 as a feature
+report every 15 ms froze the unit during a settings write (see below). Asking for it with a
+command every 400 ms held Chrome's input reports back for 60 to 90 ms after each command;
+the same commands from Python on Linux caused no gap, so the delay is in Chrome.
 
 LEDs in OpenShifter:
 

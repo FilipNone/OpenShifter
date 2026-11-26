@@ -37,6 +37,7 @@ python3 tools/openshifter_ctl.py highlow toggle           # or button
 python3 tools/openshifter_ctl.py balance                  # white balance, guided
 python3 tools/openshifter_ctl.py gamma on                 # or off
 python3 tools/openshifter_ctl.py neutral on               # neutral button, or off
+python3 tools/openshifter_ctl.py anti-jitter medium      # none, low, medium or high
 ```
 
 After calibrating, unplug the shifter and plug it back in. `calibrate` and `status` also work with the stock firmware.

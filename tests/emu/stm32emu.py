@@ -32,6 +32,8 @@ FLASH_BASE = 0x08000000
 FLASH_SIZE = 0x20000
 APP_BASE = 0x08010000
 SETTINGS_ADDR = 0x0800F000
+FLASH_ERASE_US = 20_000    # page erase, STM32F103 typical
+FLASH_PROGRAM_US = 50       # one halfword
 RAM_BASE = 0x20000000
 RAM_SIZE = 0x10000
 SYSMEM_BASE = 0x1FFFF000
@@ -296,6 +298,12 @@ class UsbDevice:
         self.epr[n] = (self.epr[n] & ~EP_STAT_TX) | s << 4
 
     # host tokens
+    def _check_flash_idle(self, *what):
+        """A unit froze when it took control requests during a flash erase."""
+        m = self.m
+        if m.time_us < m.flash_busy_until:
+            m.flash_violations.append(('USB packet while flash busy',) + what)
+
     def addressed(self, addr):
         return (self.daddr & 0x80) and (self.daddr & 0x7F) == addr
 
@@ -305,6 +313,7 @@ class UsbDevice:
         n = self.find_ep(0)
         if (self.epr[n] & EP_TYPE) != 0x0200 or self._stat(n, 12) == STAT_DISABLED:
             return 'TIMEOUT'
+        self._check_flash_idle('setup')
         self.buf_write(self.bt(n, 2), data)
         self.bt_set(n, 3, (self.bt(n, 3) & 0xFC00) | len(data))
         self.epr[n] |= EP_CTR_RX | EP_SETUP
@@ -321,6 +330,7 @@ class UsbDevice:
             return 'TIMEOUT'
         s = self._stat(n, 4)
         if s == STAT_VALID:
+            self._check_flash_idle('in', ep)
             cnt = self.bt(n, 1) & 0x3FF
             data = self.buf_read(self.bt(n, 0), cnt)
             self._set_stat_tx(n, STAT_NAK)
@@ -338,6 +348,7 @@ class UsbDevice:
             return 'TIMEOUT'
         s = self._stat(n, 12)
         if s == STAT_VALID:
+            self._check_flash_idle('out', ep)
             c = self.bt(n, 3)
             size = ((c >> 10) & 0x1F) * 2 if not c & 0x8000 else (((c >> 10) & 0x1F) + 1) * 32
             if len(data) > size:
@@ -545,7 +556,7 @@ class UsbHost:
 
 class Machine:
     def __init__(self, image, settings=None, *, mips=24, slice_us=20, page_size=2048,
-                 hse=True, profile=None, uid_top=0x1C):
+                 hse=True, profile=None, uid_top=0x1C, flash_busy=True):
         self.profile = dict(profile or {})
         self.mips = mips
         self.slice_us = slice_us
@@ -584,6 +595,12 @@ class Machine:
         self.flash_events = []
         self.flash_violations = []
         self.flash_worn = False   # True: the settings page refuses every erase and program
+        # FPEC busy until this time (us). On the AIR32 an interrupt taken while
+        # the flash is busy can fetch code the flash cannot give it and lock
+        # the bus (seen on a unit: a GET_REPORT during a settings write froze
+        # it), so taking one then is a flash violation.
+        self.flash_busy_until = 0
+        self.flash_busy = flash_busy   # False: erases and writes take no time
         self.sensor = Sensor()
         self.buttons = {'PA4': False, 'PA5': False, 'PB10': False}
         self.usb = UsbDevice(self)
@@ -650,6 +667,8 @@ class Machine:
         else:
             self.flash_events.append(('program', addr, value))
             self.regs[0x4002200C] |= 0x20
+            if self.flash_busy:
+                self.flash_busy_until = self.time_us + FLASH_PROGRAM_US
 
     def _flash_ctrl_write(self, a, v):
         if a == 0x40022004:   # KEYR
@@ -680,6 +699,8 @@ class Machine:
                     self.uc.mem_write(page, b'\xff' * self.page_size)
                     self.flash_events.append(('erase', page))
                     self.regs[0x4002200C] |= 0x20
+                    if self.flash_busy:
+                        self.flash_busy_until = self.time_us + FLASH_ERASE_US
                 self.regs[a] &= ~0x40
             if v & 0x40 and v & 0x4:
                 self.flash_violations.append(('mass-erase',))
@@ -785,6 +806,8 @@ class Machine:
             v = self._idr('A' if wa == 0x40010808 else 'B')
         elif wa == 0x40013800:
             v = 0xC0                  # TXE | TC
+        elif wa == 0x4002200C:
+            v = self.regs[wa] | (1 if self.time_us < self.flash_busy_until else 0)   # BSY
         else:
             v = self.regs[wa]
         return (v >> sh) & ((1 << (8 * size)) - 1)
@@ -1000,6 +1023,8 @@ class Machine:
         if best is None:
             return False
         exc = best[1]
+        if self.time_us < self.flash_busy_until:
+            self.flash_violations.append(('interrupt while flash busy', exc))
         self.pending.discard(exc)
         uc = self.uc
         saved = [uc.reg_read(r) for r in SAVED_REGS]

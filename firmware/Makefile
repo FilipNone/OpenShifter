@@ -1,5 +1,5 @@
 # OpenShifter firmware. Needs clang + lld (LLVM >= 15); no libc, no libgcc.
-VERSION ?= 0.5.0
+VERSION ?= 0.6.0
 BUILD   := build
 TARGET  := $(BUILD)/openshifter
 SRCS    := $(wildcard src/*.c)

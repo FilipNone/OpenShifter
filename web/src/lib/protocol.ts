@@ -9,6 +9,9 @@ export const PID_BOOT = 0x7097
 
 export const REPORT_ID = 0x24
 export const VERSION_REPORT_ID = 0x25
+/** Input report: the lever's x and y before anti-jitter, sent while
+ * anti-jitter is on (0.6.0 and newer). */
+export const RAW_REPORT_ID = 0x26
 export const REPORT_LEN = 63
 
 export const CMD_BOOT = 0x00
@@ -23,6 +26,7 @@ export const CMD_HIGHLOW = 0x32
 export const CMD_BALANCE = 0x33
 export const CMD_GAMMA = 0x34
 export const CMD_NEUTRAL = 0x35
+export const CMD_JITTER = 0x36
 
 export const CHUNK = 60
 export const ERASE_WAIT_MS = 2000
@@ -36,6 +40,9 @@ export const OPT_RANGE_TOGGLE = 0x02
 export const OPT_RANGE_ON = 0x04
 export const OPT_GAMMA = 0x08
 export const OPT_NEUTRAL = 0x10
+/** Anti-jitter level 0 to 3 in bits 5 and 6 (0.6.0 and newer). */
+export const OPT_JITTER = 0x60
+export const OPT_JITTER_SHIFT = 5
 export const OPT_PRESENT = 0x80
 
 export type RGB = readonly [number, number, number]
@@ -110,6 +117,8 @@ export class Status {
   get highlowOn() { return (this.raw[23] & OPT_RANGE_ON) !== 0 }
   get gamma() { return (this.raw[23] & OPT_GAMMA) !== 0 }
   get neutralButton() { return (this.raw[23] & OPT_NEUTRAL) !== 0 }
+  /** Anti-jitter on the lever position: 0 none, 1 low, 2 medium, 3 high. */
+  get antiJitter() { return (this.raw[23] & OPT_JITTER) >> OPT_JITTER_SHIFT }
   get gains(): RGB { return [this.raw[24], this.raw[53], this.raw[54]] }
   /** Strength of the magnet's field at the sensor, sent as r / 8. */
   get radius() { return this.raw[48] * 8 }
@@ -158,6 +167,13 @@ export function parseVersion(data: DataView): string | null {
     s += String.fromCharCode(b)
   }
   return /^\d+\.\d+\.\d+/.test(s) ? s : null
+}
+
+/** Report 0x26: raw lever x, y, big-endian, with or without the report ID. */
+export function parseRaw(data: DataView): { x: number; y: number } | null {
+  const off = data.byteLength === 5 && data.getUint8(0) === RAW_REPORT_ID ? 1 : 0
+  if (data.byteLength - off < 4) return null
+  return { x: data.getInt16(off), y: data.getInt16(off + 2) }
 }
 
 export function compareVersions(a: string, b: string): number {

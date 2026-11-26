@@ -222,6 +222,23 @@ class CommandLine(unittest.TestCase):
         self.assertEqual(rc, 2)
         self.assertIn('0.5.0 or newer', err)
 
+    def test_anti_jitter(self):
+        new = Bus('OpenShifter 0.6.0')
+        rc, out, err = self.run_ctl('status', bus=new)
+        self.assertEqual(rc, 0, err)
+        self.assertIn('anti-jitter none', out)
+        self.assertNotIn('anti-jitter', self.run_ctl('status', bus=Bus('OpenShifter 0.5.0'))[1])
+        for level, bits in (('high', 0x60), ('low', 0x20), ('medium', 0x40), ('none', 0)):
+            rc, out, err = self.run_ctl('anti-jitter', level, bus=new)
+            self.assertEqual(rc, 0, err)
+            self.assertIn(f'anti-jitter {level} (saved)', out)
+            self.assertEqual(self.dev.settings()[0x50] & 0x60, bits, level)
+        self.run_ctl('anti-jitter', 'medium', bus=new)
+        self.assertIn('anti-jitter medium', self.run_ctl('status', bus=new)[1])
+        rc, _, err = self.run_ctl('anti-jitter', 'low', bus=Bus('OpenShifter 0.5.0'))
+        self.assertEqual(rc, 2)
+        self.assertIn('0.6.0 or newer', err)
+
     def test_guided_balance(self):
         rc, out, err = self.run_ctl('balance', steps=['b -40', 'g+4', 'r 300', 'x', ''])
         self.assertEqual(rc, 0, err)

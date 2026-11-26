@@ -34,7 +34,7 @@ const uint8_t usb_device_desc[18] = {
  * Button 1 is report bit 12, the neutral button (off unless turned on with
  * 24 35 1). Linux (joydev, SDL) numbers buttons from 0 in usage order, so
  * gear 1 is button 1 there; Windows numbers from 1, where gear 1 is button 2. */
-const uint8_t usb_report_desc[89] = {
+const uint8_t usb_report_desc[97] = {
     0x05, 0x01,                     /* Usage Page (Generic Desktop) */
     0x09, 0x04,                     /* Usage (Joystick) */
     0xa1, 0x01,                     /* Collection (Application) */
@@ -67,6 +67,10 @@ const uint8_t usb_report_desc[89] = {
     0x09, 0x02,                     /*   Usage (2) */
     0x95, 0x0f,                     /*   15 x 8 bits */
     0xb1, 0x02,                     /*   Feature (Data, Var, Abs): version */
+    0x85, 0x26,                     /*   Report ID 0x26 */
+    0x09, 0x03,                     /*   Usage (3) */
+    0x95, 0x04,                     /*   4 x 8 bits */
+    0x81, 0x02,                     /*   Input (Data, Var, Abs): raw lever x, y */
     0xc0,                           /* End Collection */
 };
 
@@ -111,6 +115,7 @@ static const struct { const char *s; uint8_t n; } usb_strings[] = {
 #define EP_CTR_TX   0x0080u
 #define EP_CONTROL  0x0200u
 #define EP_INTERRUPT 0x0600u
+#define STAT_DISABLED 0u
 #define STAT_STALL  1u
 #define STAT_NAK    2u
 #define STAT_VALID  3u
@@ -602,6 +607,39 @@ void usb_reconnect(void)
     gpio_mode(GPIOA, 12, GPIO_IN_ANALOG);
     USB_CNTR = CNTR_FRES;
     delay_ms(STOCK_MS(200));
+}
+
+/* Settings writes. A unit froze when the host sent control requests during
+ * a flash erase, even with interrupts off: the erase never finished. While
+ * the flash is busy, EP0 ignores everything (the host sees a failed request)
+ * and EP1 answers NAK (the host tries again later). */
+static uint8_t paused_stat[3];
+
+void usb_pause(void)
+{
+    if (!(RCC_APB1ENR & APB1_USB))
+        return;
+    uint32_t r0 = USB_EPR(0), r1 = USB_EPR(1);
+    paused_stat[0] = (uint8_t)((r0 >> 4 & 3) | (r0 >> 12 & 3) << 2);
+    paused_stat[1] = (uint8_t)((r1 >> 4 & 3) | (r1 >> 12 & 3) << 2);
+    paused_stat[2] = 1;
+    ep_stat_tx(0, STAT_DISABLED);
+    ep_stat_rx(0, STAT_DISABLED);
+    if (paused_stat[1] & 3)
+        ep_stat_tx(1, STAT_NAK);
+    if (paused_stat[1] >> 2 & 3)
+        ep_stat_rx(1, STAT_NAK);
+}
+
+void usb_unpause(void)
+{
+    if (!paused_stat[2])
+        return;
+    paused_stat[2] = 0;
+    ep_stat_tx(0, paused_stat[0] & 3);
+    ep_stat_rx(0, paused_stat[0] >> 2 & 3);
+    ep_stat_tx(1, paused_stat[1] & 3);
+    ep_stat_rx(1, paused_stat[1] >> 2 & 3);
 }
 
 void usb_detach(void)

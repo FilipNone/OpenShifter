@@ -11,6 +11,7 @@ firmware/stock/VelocityOneTuner_Shift_Firmware.bin (or $OPENSHIFTER_STOCK_FW)
 with the expected SHA-256.
 """
 import pathlib
+import random
 import sys
 import unittest
 
@@ -103,8 +104,9 @@ class OpenShifter(EmulatedCase):
         self.assertEqual(bits('input', 0x24), 8 * 63)
         self.assertEqual(bits('output', 0x24), 8 * 63)
         self.assertEqual(bits('feature', 0x25), 8 * 15)
+        self.assertEqual(bits('input', 0x26), 8 * 4)
         self.assertEqual({(f['kind'], f['report']) for f in fields},
-                         {('input', 1), ('input', 0x24), ('output', 0x24), ('feature', 0x25)})
+                         {('input', 1), ('input', 0x24), ('output', 0x24), ('feature', 0x25), ('input', 0x26)})
 
         data = [f for f in fields if not f['const']]
         buttons = [u for f in data for u in f['usages'] if u >> 16 == 0x09]
@@ -112,7 +114,7 @@ class OpenShifter(EmulatedCase):
         self.assertEqual(buttons, [0x00090000 | n for n in [*range(2, 14), 1]], 'one usage per button bit')
         for f in data:
             self.assertEqual(f['application'], 0x00010004)
-            if f['report'] in (0x24, 0x25):
+            if f['report'] in (0x24, 0x25, 0x26):
                 self.assertEqual({u >> 16 for u in f['usages']}, {0xFF00})
             else:
                 self.assertEqual(len(set(f['usages'])), f['count'], 'repeated usage')
@@ -215,6 +217,7 @@ class OpenShifter(EmulatedCase):
         # queued them, and a host polling every 2 ms got only report 1.
         for miss, least in ((lambda n: n % 7 == 0, 350), (lambda n: n % 2 == 0, 200)):
             r = Rig(openshifter_image()).boot()
+            r.run(SETTLE_MS)   # past the first settings write (see the next test)
             r.m.host.miss = miss
             n = len(r.m.host.in_reports)
             r.run(1000)
@@ -259,6 +262,108 @@ class OpenShifter(EmulatedCase):
         self.assertEqual(r.last(0x24)[63], 2)
         self.assertEqual(r.m.led_frames[-1][1][:3], led(0, 255, 0))
         self.assertFlashClean(r)
+
+    def test_anti_jitter_steadies_the_lever(self):
+        """24 36: a lever held still with sensor noise, at level 0 and 3, in
+        H and in handbrake mode; a full pull is not held back; the level is
+        kept after a power cycle."""
+        def changes(r, level, x0, y0):
+            r.command(0x24, 0x36, level)
+            rng = random.Random(3)
+            t0 = r.m.time_us
+            for _ in range(150):
+                r.m.set_position(x0 + rng.randint(-3, 3), y0 + rng.randint(-3, 3))
+                r.m.run(ms=2)
+            late = [(t, p) for t, p in r.m.host.in_reports if t > t0 + 60_000]
+            axis = [p[3] | p[4] << 8 for t, p in late if p[0] == 0x01]
+            pos = [bytes(p[2:6]) for t, p in late if p[0] == 0x24]
+            self.assertGreater(min(len(axis), len(pos)), 40)   # 0x24 at half rate with anti-jitter on
+            n = lambda v: sum(a != b for a, b in zip(v, v[1:]))  # noqa: E731
+            return n(pos), n(axis), axis[-1]
+
+        r = Rig(openshifter_image(), h_pattern=True).boot()
+        calibrate(r)
+        raw_xy, _, _ = changes(r, 0, 120, -280)
+        steady_xy, _, _ = changes(r, 3, 120, -280)
+        self.assertGreater(raw_xy, 30, 'raw x and y follow the noise')
+        self.assertEqual(steady_xy, 0, 'x and y hold still in H')
+        r.press('PB10', hold=False, ms=200)
+        r.press('PA5', ms=100)
+        r.press('PA5', hold=False, ms=100)
+        self.assertEqual(r.last(0x24)[63], 2, 'handbrake mode')
+        _, raw, raw_end = changes(r, 0, -150, -850)
+        _, steady, steady_end = changes(r, 3, -150, -850)
+        self.assertGreater(raw, 30, 'the raw axis follows the noise')
+        self.assertEqual(steady, 0)
+        self.assertLess(abs(steady_end - raw_end), 2000, 'about the same position')
+        # Report 0x26 carries the raw reading.
+        t0 = r.m.time_us
+        rng = random.Random(4)
+        for _ in range(100):
+            r.m.set_position(-150 + rng.randint(-3, 3), -850 + rng.randint(-3, 3))
+            r.m.run(ms=2)
+        late = [p for t, p in r.m.host.in_reports if t > t0 + 20_000]
+        raw = {int.from_bytes(p[3:5], 'big', signed=True) for p in late if p[0] == 0x26}
+        shown = {bytes(p[2:6]) for p in late if p[0] == 0x24}
+        self.assertGreater(len(raw), 2, 'report 0x26 follows the noise')
+        self.assertEqual(len(shown), 1, 'report 0x24 holds still')
+        r.move(-150, -1700, ms=20)
+        self.assertEqual(r.last(0x01)[3:5], b'\xff\xff', 'a full pull is not held back')
+        r.run(SETTLE_MS)
+        self.assertFlashClean(r)
+        r = r.reboot().boot()
+        self.assertEqual(r.last(0x24)[23] >> 5 & 3, 3, 'kept after a restart')
+
+    def test_control_requests_during_a_settings_write(self):
+        """What froze a unit: control requests every 15 ms (a test build of the
+        web tool read a feature report that often) while a setting was being
+        written. While the flash is busy the unit takes no USB packet and no
+        interrupt (assertFlashClean), so a request then fails; all others are
+        answered, and the setting lands."""
+        r = Rig(openshifter_image(), h_pattern=True).boot()
+        r.run(SETTLE_MS)
+        n = erases(r)
+        r.command(0x24, 0x36, 2, ms=0)
+        failed = 0
+        for _ in range(110):
+            rep = r.control(0xA1, 0x01, 0x0124, 0, 64)
+            if isinstance(rep, str):
+                failed += 1
+            else:
+                self.assertEqual(rep[0], 0x24)
+            r.m.run(ms=13)
+        self.assertLessEqual(failed, 2, 'only requests during the write fail')
+        self.assertEqual(erases(r), n + 1)
+        self.assertEqual(r.m.settings()[0x50] & 0x60, 0x40)
+        # Reports pause for the write, and only that long.
+        times = [t for t, rep in r.m.host.in_reports if rep[0] == 0x01]
+        self.assertLess(max(b - a for a, b in zip(times, times[1:])), 40_000)
+        self.assertFlashClean(r)
+
+    def test_raw_report_only_with_anti_jitter(self):
+        """With anti-jitter on, report 0x26 takes every other report 0x24
+        slot, so the host gets no more reports than usual. With it off, there
+        is no report 0x26: report 0x24 already has the raw reading."""
+        def counts(r, ms):
+            n = len(r.m.host.in_reports)
+            r.run(ms)
+            ids = [p[0] for _, p in r.m.host.in_reports[n:]]
+            return {k: ids.count(k) for k in (0x01, 0x24, 0x26)}
+
+        r = Rig(openshifter_image()).boot()
+        r.run(SETTLE_MS)   # past the first settings write, which pauses reports
+        before = counts(r, 400)
+        self.assertEqual(before[0x26], 0)
+        r.command(0x24, 0x36, 1, ms=50)
+        during = counts(r, 400)
+        self.assertGreater(during[0x26], 80)
+        self.assertGreater(during[0x24], 80)
+        self.assertAlmostEqual(during[0x01], before[0x01], delta=4)
+        self.assertAlmostEqual(during[0x24] + during[0x26], before[0x24], delta=4)
+        rep = [p for _, p in r.m.host.in_reports if p[0] == 0x26][-1]
+        self.assertEqual(len(rep), 5)
+        r.command(0x24, 0x36, 0, ms=20)
+        self.assertEqual(counts(r, 300)[0x26], 0, 'none: no report 0x26')
 
     def test_settings_are_written_once_they_stop_changing(self):
         r = Rig(openshifter_image(), h_pattern=True).boot()
@@ -327,7 +432,7 @@ OPENSHIFTER_REPORT_DESCRIPTOR = bytes.fromhex(
     '05010904a1018501 0509 1902290d 15002501 7501950c 8102 0901 9501 8102 9503 8103'
     '0501 0932 150027ffff0000 350047ffff0000 75109501 8102'
     '8524 0600ff 0901 150026ff00 7508953f 8102 0901 9102'
-    '8525 0902 950f b102 c0')
+    '8525 0902 950f b102 8526 0903 9504 8102 c0')
 
 
 def as_stock_descriptor(d):
@@ -434,6 +539,9 @@ class MatchesStock(EmulatedCase):
             cls = Rig if img is stock else StockView
 
             def make(image, settings=None, **kw):
+                # Instant flash: stock's writes take about 70 ms and shift
+                # its timing against OpenShifter's; these tests compare logic.
+                kw.setdefault('flash_busy', False)
                 return cls(image, as_stock_page() if settings is None else settings, **kw)
             return make
         stock, ours = stock_image(), openshifter_image()

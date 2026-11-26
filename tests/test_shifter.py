@@ -68,6 +68,8 @@ def setUpModule():
             ('shifter_buttons', ctypes.c_uint, [ctypes.c_void_p, i32, i32, i32]),
             ('shifter_led_grb', None, [ctypes.c_void_p, i32, ctypes.c_char_p]),
             ('shifter_report36', None, [ctypes.c_void_p, ctypes.c_char_p]),
+            ('shifter_report_raw', None, [ctypes.c_void_p, ctypes.c_char_p]),
+            ('shifter_raw_wanted', i32, [ctypes.c_void_p]),
             ('sh_saves_init', None, [ctypes.c_void_p]),
             ('sh_saves_changed', None, [ctypes.c_void_p, u32]),
             ('sh_saves_take', i32, [ctypes.c_void_p, u32, i32]),
@@ -519,6 +521,235 @@ class Options(CoreHelpers, unittest.TestCase):
         self.assertEqual(self.leds(s), [WARM, WARM, OFF])
         self.cmd(s, 0x24, 0x00)
         self.assertEqual(self.leds(s), [led(255, 255, 0)] * 3)
+
+
+class AntiJitter(CoreHelpers, unittest.TestCase):
+    """24 36: anti-jitter on the lever position, at each level."""
+
+    def calibrated(self, level):
+        """A calibrated unit (rest y 0, pulled y -1500) in H, at `level`."""
+        s = self.new()
+        lib.shifter_buttons(s, 1, 0, 0)
+        self.feed(s, 0, 0)
+        self.cmd(s, 0x24, 0x21, 9)
+        self.feed(s, -300, -1500)
+        self.cmd(s, 0x24, 0x21, 10)
+        for k, (x, y, z) in enumerate(GEARS, 1):
+            self.feed(s, x, y, z)
+            self.cmd(s, 0x24, 0x21, k)
+        st = (ctypes.c_uint16 * 100)(*[0xFFFF] * 100)
+        lib.shifter_save(s, st)
+        s = self.new(list(st))
+        lib.shifter_buttons(s, 1, 0, 0)
+        self.assertEqual(self.cmd(s, 0x24, 0x36, level), SH_ACT_SAVE)
+        return s
+
+    def to_handbrake_mode(self, s):
+        for b in (0, 1, 1, 0):
+            lib.shifter_buttons(s, 0, b, 0)
+        self.assertEqual(self.report36(s)[63], 2)
+
+    def report36(self, s):
+        out = ctypes.create_string_buffer(64)
+        lib.shifter_report36(s, out)
+        return out.raw
+
+    def axis(self, s):
+        r = self.report1(s)
+        return r[3] | r[4] << 8
+
+    def run_frames(self, s, poses):
+        """Feeds (x, y, z) frames; returns (gears, axis, x, y, r/8) after each."""
+        out = []
+        for x, y, z in poses:
+            lib.shifter_sensor_frame(s, frame(x, y, z))
+            r1, r36 = self.report1(s), self.report36(s)
+            out.append((r1[1], r1[3] | r1[4] << 8, struct.unpack('>hh', r36[2:6]), r36[48]))
+        return out
+
+    @staticmethod
+    def changes(rows, i):
+        return sum(a[i] != b[i] for a, b in zip(rows, rows[1:]))
+
+    def test_command_and_storage(self):
+        s = self.new()
+        for level in range(4):
+            self.assertEqual(self.cmd(s, 0x24, 0x36, level), SH_ACT_SAVE)
+            self.assertEqual(self.report36(s)[23], 0x80 | level << 5)
+        self.assertEqual(self.cmd(s, 0x24, 0x36, 4), 0)
+        self.assertEqual(self.report36(s)[23] >> 5 & 3, 3, 'a bad level changes nothing')
+        st = (ctypes.c_uint16 * 100)(*[0xFFFF] * 100)
+        lib.shifter_save(s, st)
+        self.assertEqual(st[0x50], 0xA560)
+        self.assertEqual(self.report36(self.new(list(st)))[23], 0xE0, 'kept after a restart')
+        self.assertEqual(self.report36(self.new())[23], 0x80, 'none by default')
+
+    def test_lever_position_holds_still(self):
+        rng = random.Random(7)
+        poses = {'neutral': (120, -280), 'gear 3': (60, 3150), 'handbrake': (-150, -850)}
+        for name, (x0, y0) in poses.items():
+            noise = [(x0 + rng.randint(-3, 3), y0 + rng.randint(-3, 3), 0x80 + rng.randint(0, 1))
+                     for _ in range(600)]
+            for level in range(4):
+                s = self.calibrated(level)
+                if name == 'handbrake':
+                    self.to_handbrake_mode(s)
+                rows = self.run_frames(s, noise)[100:]
+                moved = [self.changes(rows, i) for i in (1, 2, 3)]   # axis, x/y, r
+                if level == 0:
+                    self.assertGreater(moved[1], 100, f'{name}: the raw x/y follow the noise')
+                    if name == 'neutral':   # where z decides the field strength
+                        self.assertGreater(moved[2], 50, f'{name}: the raw r follows z')
+                else:
+                    # Low may still step once in a while near neutral, where
+                    # x and y are noisiest; never back and forth.
+                    allowed = 3 if level == 1 else 0
+                    self.assertLessEqual(max(moved), allowed, f'{name} at level {level}: {moved}')
+                self.assertEqual(self.changes(rows, 0), 0, f'{name}: gears at level {level}')
+
+    def test_gear_7_does_not_chatter(self):
+        """Gear 7 is held while its field strength stays under a limit, and
+        that strength steps with z. With the lever right at the limit and z
+        flipping between the steps on either side of it, the raw reading
+        keeps dropping and taking the gear. Anti-jitter settles on one side
+        and stays there."""
+        rng = random.Random(11)
+        x, y, _ = GEARS[6]
+        poses = [(x, y, rng.choice((0x6E, 0x6F))) for _ in range(1500)]
+        for level in range(4):
+            s = self.calibrated(level)
+            self.run_frames(s, [GEARS[6]] * 40)
+            self.assertEqual(self.report1(s)[1], 0x40)
+            flips = self.changes(self.run_frames(s, poses), 0)
+            if level == 0:
+                self.assertGreater(flips, 4, 'the raw reading chatters')
+            else:
+                self.assertLessEqual(flips, 1, level)
+
+    def test_quick_moves_are_not_late(self):
+        """Shifts and a yanked handbrake: every level gives the same reports
+        at the same samples as none."""
+        def path(steps, *points):
+            out = []
+            for (x0, y0, z0), (x1, y1, z1) in zip(points, points[1:]):
+                out += [(round(x0 + (x1 - x0) * i / steps), round(y0 + (y1 - y0) * i / steps), z1 if i else z0)
+                        for i in range(steps)] + [(x1, y1, z1)] * 30
+            return out
+        n = (0, 0, 0x80)
+        shifts = path(8, n, GEARS[0], n, GEARS[2], GEARS[3], n, GEARS[5], n)
+        yank = path(10, n, (-150, -1700, 0x80), n, (-150, -1700, 0x80), n)
+        ref = None
+        for level in range(4):
+            s = self.calibrated(level)
+            got = [r[0] for r in self.run_frames(s, shifts)]
+            self.to_handbrake_mode(s)
+            got += [r[1] for r in self.run_frames(s, yank)]
+            ref = ref or got
+            self.assertEqual(got, ref, level)
+        self.assertIn(65535, ref)
+
+    def test_follows_slow_moves(self):
+        span = 1100   # axis from rest - 300 (-300) to pulled + 100 (-1400)
+        ramp = [round(-300 - 1100 * i / 300) for i in range(300)] + [-1400] * 100
+        back = [round(-1400 + 900 * i / 200) for i in range(200)] + [-500] * 100
+        poses = [(-150, y, 0x80) for y in ramp + back]
+        s = self.calibrated(0)
+        self.to_handbrake_mode(s)
+        ref = [r[1] for r in self.run_frames(s, poses)]
+        speed = 4.5   # y per sample, the faster of the two moves
+        for level, band, shift in ((1, 4, 1), (2, 8, 1), (3, 16, 2)):
+            s = self.calibrated(level)
+            self.to_handbrake_mode(s)
+            out = [r[1] for r in self.run_frames(s, poses)]
+            worst = max(abs(a - b) for a, b in zip(out, ref))
+            # The band's free travel when the lever turns round, plus the
+            # running average's lag.
+            limit = 2 * band + (2 ** shift - 1) * speed + 2
+            self.assertLess(worst, limit * 65535 / span, level)
+            # Where the lever stopped: within the band (frame() rounds y by 1 or 2).
+            for at in (399, len(out) - 1):
+                self.assertLessEqual(abs(out[at] - ref[at]), (band + 2) * 65535 / span, (level, at))
+
+    def test_calibration_with_noise(self):
+        """Calibrated at high with a noisy sensor, every gear is found."""
+        rng = random.Random(5)
+        def noisy(x, y, z, n=60):
+            return [(x + rng.randint(-3, 3), y + rng.randint(-3, 3), z + rng.randint(0, 1)) for _ in range(n)]
+        s = self.new()
+        lib.shifter_buttons(s, 1, 0, 0)
+        self.cmd(s, 0x24, 0x36, 3)
+        self.run_frames(s, noisy(0, 0, 0x80))
+        self.cmd(s, 0x24, 0x21, 9)
+        self.run_frames(s, noisy(-300, -1500, 0x80))
+        self.cmd(s, 0x24, 0x21, 10)
+        for k, (x, y, z) in enumerate(GEARS, 1):
+            self.run_frames(s, noisy(x, y, z))
+            self.cmd(s, 0x24, 0x21, k)
+        st = (ctypes.c_uint16 * 100)(*[0xFFFF] * 100)
+        lib.shifter_save(s, st)
+        s = self.new(list(st))
+        lib.shifter_buttons(s, 1, 0, 0)
+        self.run_frames(s, noisy(0, 0, 0x80))
+        for k, (x, y, z) in enumerate(GEARS, 1):
+            rows = self.run_frames(s, noisy(x + 120, y - 90, z, n=150))
+            self.assertEqual(rows[-1][0], 1 << (k - 1), f'gear {k}')
+            self.run_frames(s, noisy(0, 0, 0x80))
+            self.assertEqual(self.report1(s)[1], 0, f'neutral after gear {k}')
+
+    def test_raw_report(self):
+        """Report 0x26 gives the reading before anti-jitter, at every level,
+        and is sent while anti-jitter is on."""
+        s = self.new()
+        for level, wanted in ((0, 0), (1, 1), (3, 1), (0, 0)):
+            self.cmd(s, 0x24, 0x36, level)
+            self.assertEqual(bool(lib.shifter_raw_wanted(s)), bool(wanted), level)
+        for level in range(4):
+            s = self.calibrated(level)
+            self.run_frames(s, [(120, -280, 0x80)] * 40)
+            rows = self.run_frames(s, [(126, -274, 0x80)])
+            out = ctypes.create_string_buffer(5)
+            lib.shifter_report_raw(s, out)
+            x, y = struct.unpack('>hh', out.raw[1:5])
+            self.assertEqual(out.raw[0], 0x26)
+            self.assertLessEqual(abs(x - 126) + abs(y + 274), 4, level)   # frame() rounds by 1 or 2
+            if level >= 2:
+                self.assertNotEqual(rows[0][2], (x, y), 'report 0x24 holds still')
+
+    def test_a_bad_read_is_skipped(self):
+        """One frame far from the last (seen on a unit: y 6598 at rest) moves
+        nothing with anti-jitter on. Two in a row are a real jump: the second
+        counts, one frame later than with none."""
+        hold = [(-150, -850, 0x80)] * 60
+        bad = [(1800, -3200, 0x80)]
+        for level in range(4):
+            s = self.calibrated(level)
+            self.to_handbrake_mode(s)
+            before = self.run_frames(s, hold)[-1]
+            spike = self.run_frames(s, bad)[0]
+            after = self.run_frames(s, hold[:5])
+            if level == 0:
+                self.assertNotEqual(spike[2], before[2], 'none passes the bad read')
+            else:
+                self.assertEqual((spike[1], spike[2]), (before[1], before[2]), level)
+                self.assertEqual([r[1:3] for r in after], [before[1:3]] * 5, level)
+            s = self.calibrated(level)
+            self.to_handbrake_mode(s)
+            self.run_frames(s, hold)
+            jump = [r[1] for r in self.run_frames(s, [(-150, -1700, 0x80)] * 6)]
+            full = jump.index(65535)
+            ref = ref_full if level else full
+            if not level:
+                ref_full = full
+            self.assertLessEqual(full, ref + 1, f'level {level}: one frame later at most')
+
+    def test_starts_over_after_the_sensor_restarts(self):
+        s, ref = self.calibrated(3), self.calibrated(0)
+        for t in (s, ref):
+            self.run_frames(t, [(100, -300, 0x80)] * 50)
+            for _ in range(120):
+                lib.shifter_sensor_frame(t, bytes(8))
+        self.assertEqual(self.run_frames(s, [(110, -310, 0x80)])[0][2],
+                         self.run_frames(ref, [(110, -310, 0x80)])[0][2], 'no value left from before')
 
 
 class Saves(ctypes.Structure):

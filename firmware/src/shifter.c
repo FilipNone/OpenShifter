@@ -324,7 +324,8 @@ void shifter_load(shifter_t *s, const uint16_t st[SH_SETTINGS_HALFWORDS])
     s->g1_left_of_g3 = s->gear_x[0] < s->gear_x[2];
 
     if (st[SH_ST_FLAGS] >> 8 == SH_ST_MARK) {
-        s->options = (uint8_t)(st[SH_ST_FLAGS] & (SH_OPT_LOGO | SH_OPT_RANGE_TOGGLE | SH_OPT_GAMMA | SH_OPT_NEUTRAL));
+        s->options = (uint8_t)(st[SH_ST_FLAGS] & (SH_OPT_LOGO | SH_OPT_RANGE_TOGGLE | SH_OPT_GAMMA | SH_OPT_NEUTRAL |
+                                                  SH_OPT_JITTER));
         if (st[SH_ST_COLOR] <= 0xff && st[SH_ST_COLOR + 1] <= 0xff && st[SH_ST_COLOR + 2] <= 0xff)
             for (int i = 0; i < 3; i++)
                 s->color[i] = (uint8_t)st[SH_ST_COLOR + i];
@@ -372,7 +373,92 @@ static int32_t proj(uint16_t s12, int32_t q30)
     return q30 < 0 ? -v : v;
 }
 
-/* Sensor frame -> s12/s14/r/theta/x/y. */
+/* Anti-jitter (24 36) on the lever position: x, y and the sensor's z (s14),
+ * from which everything else follows (gears, sequential shifts, the
+ * handbrake axis, the reports, calibration). Each runs through a short
+ * running average, then holds still until the average moves more than a
+ * band from it. The band hides the sensor noise and a slightly shaky hand;
+ * going back the other way costs twice the band of free travel. If the
+ * average stays more than half a band away for JIT_SETTLE samples, the
+ * output moves to it once, so a still lever reads within half a band of
+ * where it is (noise does not stay on one side that long). A jump much
+ * larger than the noise passes at once, so quick moves are never late. A
+ * frame that jumps further than the lever can move in 2 ms is a bad read and
+ * is skipped; if the next frame agrees, it counts.
+ * Tuned on one unit: x and y have a noise of about 2 (sd) and z flickers by
+ * one step of its high byte (25 units of s14). */
+static const uint8_t jit_shift[4] = { 0, 1, 1, 2 };
+static const uint8_t jit_band[2][4] = { { 0, 4, 8, 16 },      /* x, y */
+                                        { 0, 13, 16, 20 } };  /* z */
+static const uint8_t jit_jump[2] = { 150, 80 };
+#define JIT_SETTLE 64   /* 128 ms */
+static const uint16_t jit_bad[2] = { 600, 300 };   /* x or y, z: a bad read */
+
+static int steady(shifter_t *s, unsigned ch, int v, unsigned lv)
+{
+    unsigned k = ch == 2;
+    uint32_t u = (uint32_t)(v + 32768) << 4;
+    int avg = (int)(s->jit_avg[ch] >> 4) - 32768;
+    int d = v - avg;
+    if (!s->jit_ready || d > jit_jump[k] || d < -jit_jump[k]) {
+        s->jit_avg[ch] = u;
+        s->jit_held[ch] = (int16_t)v;
+        s->jit_far[ch] = 0;
+        return v;
+    }
+    if (u >= s->jit_avg[ch])
+        s->jit_avg[ch] += (u - s->jit_avg[ch]) >> jit_shift[lv];
+    else
+        s->jit_avg[ch] -= (s->jit_avg[ch] - u) >> jit_shift[lv];
+    avg = (int)(s->jit_avg[ch] >> 4) - 32768;
+    int b = jit_band[k][lv];
+    if (avg > s->jit_held[ch] + b)
+        s->jit_held[ch] = (int16_t)(avg - b);
+    else if (avg < s->jit_held[ch] - b)
+        s->jit_held[ch] = (int16_t)(avg + b);
+    int off = avg - s->jit_held[ch];
+    if (off > b / 2 || off < -(b / 2)) {
+        if (++s->jit_far[ch] >= JIT_SETTLE) {
+            s->jit_held[ch] = (int16_t)avg;
+            s->jit_far[ch] = 0;
+        }
+    } else {
+        s->jit_far[ch] = 0;
+    }
+    return s->jit_held[ch];
+}
+
+static void steady_position(shifter_t *s)
+{
+    unsigned lv = (s->options & SH_OPT_JITTER) >> SH_OPT_JITTER_SHIFT;
+    int16_t raw[3] = { s->x, s->y, s->s14 };
+    int bad = 0;
+    for (unsigned ch = 0; ch < 3; ch++) {
+        int d = raw[ch] - s->jit_raw[ch];
+        if (d > jit_bad[ch == 2] || d < -jit_bad[ch == 2])
+            bad = 1;
+        s->jit_raw[ch] = raw[ch];
+    }
+    if (!lv)
+        return;
+    if (bad && s->jit_ready && !s->jit_skipped) {
+        s->jit_skipped = 1;
+        s->x = s->jit_held[0];
+        s->y = s->jit_held[1];
+        s->s14 = s->jit_held[2];
+    } else {
+        s->jit_skipped = 0;
+        s->x = (int16_t)steady(s, 0, raw[0], lv);
+        s->y = (int16_t)steady(s, 1, raw[1], lv);
+        s->s14 = (int16_t)steady(s, 2, raw[2], lv);
+        s->jit_ready = 1;
+    }
+    /* s12 to match: x and y are s12 * 6.55 along the lever's direction. */
+    uint32_t h = sh_isqrt((uint32_t)((int32_t)s->x * s->x + (int32_t)s->y * s->y));
+    s->s12 = (uint16_t)((h * 100u + 327u) / 655u);
+}
+
+/* Sensor frame -> s12/s14/x/y/r/theta. */
 static void sensor_math(shifter_t *s, const uint8_t f[8])
 {
     s->raw_t = (uint16_t)(f[1] << 8 | f[2]);
@@ -384,6 +470,22 @@ static void sensor_math(shifter_t *s, const uint8_t f[8])
 
     s->s12 = (uint16_t)(((uint64_t)s->raw_y * S12_MUL) >> 32);
     s->s14 = (int16_t)(((int32_t)f[7] - 128) * 1280 / 51);
+
+    /* x = r cos(theta) sin(phi) 6.55, y = r cos(theta) cos(phi) 6.55,
+     * r cos(theta) == s12. Truncation toward zero as in d2iz. */
+    uint32_t ang = (uint32_t)(((uint64_t)s->raw_x * PHI_Q) >> 16);
+    int32_t sn, cs;
+    sh_sincos_q30(ang, &sn, &cs);
+    int32_t x = proj(s->s12, sn);
+    int32_t y = proj(s->s12, cs);
+    if (x < -5000 || x > 5000)
+        x = 0;
+    if (y < -5000 || y > 5000)
+        x = 0;  /* sic: stock clears x, not y */
+    s->x = (int16_t)x;
+    s->y = (int16_t)y;
+    steady_position(s);
+
     s->r2 = (int32_t)s->s12 * s->s12 + (int32_t)s->s14 * s->s14;
     s->r = (uint16_t)sh_isqrt((uint32_t)s->r2);
     s->rf = sf_sqrt_int((uint32_t)s->r2);
@@ -399,20 +501,6 @@ static void sensor_math(shifter_t *s, const uint8_t f[8])
         s->theta_lt = lhs < rhs;
         s->theta_le = lhs <= rhs;
     }
-
-    /* x = r cos(theta) sin(phi) 6.55, y = r cos(theta) cos(phi) 6.55,
-     * r cos(theta) == s12. Truncation toward zero as in d2iz. */
-    uint32_t ang = (uint32_t)(((uint64_t)s->raw_x * PHI_Q) >> 16);
-    int32_t sn, cs;
-    sh_sincos_q30(ang, &sn, &cs);
-    int32_t x = proj(s->s12, sn);
-    int32_t y = proj(s->s12, cs);
-    if (x < -5000 || x > 5000)
-        x = 0;
-    if (y < -5000 || y > 5000)
-        x = 0;  /* sic: stock clears x, not y */
-    s->x = (int16_t)x;
-    s->y = (int16_t)y;
     if (s->ref_r < s->rf)   /* non-negative floats order like their bits */
         s->ref_r = s->rf;
 }
@@ -666,6 +754,7 @@ int shifter_sensor_frame(shifter_t *s, const uint8_t f[8])
     for (int i = 1; i < 8; i++)
         any |= f[i];
     if (!any) {
+        s->jit_ready = 0;
         if (s->empty_frames < 255)
             s->empty_frames++;
         res = s->empty_frames >= 100 ? SH_FRAME_POWER_OFF : SH_FRAME_EMPTY;
@@ -860,6 +949,12 @@ unsigned shifter_command(shifter_t *s, const uint8_t *buf, unsigned len)
             return 0;
         s->options = (uint8_t)((s->options & ~SH_OPT_NEUTRAL) | (b[2] ? SH_OPT_NEUTRAL : 0));
         return SH_ACT_SAVE;
+    case 0x36:  /* anti-jitter level for the lever position, 0 to 3; saved */
+        if (b[2] > 3)
+            return 0;
+        s->options = (uint8_t)((s->options & ~SH_OPT_JITTER) | b[2] << SH_OPT_JITTER_SHIFT);
+        s->jit_ready = 0;
+        return SH_ACT_SAVE;
     case 0x3f:  /* light only chain position 0..2 in white; 0xFF ends */
         if (b[2] > 2 && b[2] != 0xff)
             return 0;
@@ -919,6 +1014,21 @@ void shifter_report36(const shifter_t *s, uint8_t out[64])
     be16(&out[59], s->hb_x_rest);
     be16(&out[61], s->hb_x_pulled);
     out[63] = s->mode;
+}
+
+/* Input report 0x26: the lever's x and y as read, before anti-jitter, so a
+ * host can show what anti-jitter removes. Sent only while anti-jitter is on;
+ * with it off, report 0x24 already has the raw reading. */
+int shifter_raw_wanted(const shifter_t *s)
+{
+    return (s->options & SH_OPT_JITTER) != 0;
+}
+
+void shifter_report_raw(const shifter_t *s, uint8_t out[5])
+{
+    out[0] = 0x26;
+    be16(&out[1], s->jit_raw[0]);
+    be16(&out[3], s->jit_raw[1]);
 }
 
 void shifter_uart_packet(const shifter_t *s, uint8_t out[16])

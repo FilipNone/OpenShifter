@@ -3,8 +3,8 @@ import { Description, Field, Fieldset, Input, Label, Legend, Radio, RadioGroup }
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { parseHex, toHex } from '../lib/color'
 import {
-  CMD_BALANCE, CMD_COLOR, CMD_GAMMA, CMD_HIGHLOW, CMD_LED, CMD_LOGO, CMD_NEUTRAL, DEFAULT_COLOR, DEFAULT_GAINS,
-  type RGB, type Status,
+  CMD_BALANCE, CMD_COLOR, CMD_GAMMA, CMD_HIGHLOW, CMD_JITTER, CMD_LED, CMD_LOGO, CMD_NEUTRAL, DEFAULT_COLOR,
+  DEFAULT_GAINS, MODE_HANDBRAKE, type RGB, type Status,
 } from '../lib/protocol'
 import type { Firmware, Session } from '../lib/session'
 import { Button, Notice, Section, Spinner, Toggle, cx, focusRing } from './ui'
@@ -287,6 +287,176 @@ function WhiteBalance({ session, status, onEditing }:
   )
 }
 
+function RadioCards<T>({ label, value, onChange, disabled, options, className }:
+  { label: string; value: T; onChange(v: T): void; disabled: boolean; className: string
+    options: { value: T; title: string; text: string }[] }) {
+  return (
+    <RadioGroup value={value} onChange={onChange} disabled={disabled} aria-label={label} className={cx('grid gap-3', className)}>
+      {options.map((o) => (
+        <Radio key={o.title} value={o.value}
+          className={cx('group relative flex cursor-pointer gap-3 rounded-xl bg-white p-4 ring-1 ring-inset ring-zinc-950/10 ' +
+            'data-[checked]:bg-led/10 data-[checked]:ring-2 data-[checked]:ring-led-edge data-[disabled]:cursor-not-allowed ' +
+            'dark:bg-white/5 dark:ring-white/10 dark:data-[checked]:bg-led/10', focusRing)}>
+          <span aria-hidden className="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ring-zinc-950/25 group-data-[checked]:bg-led group-data-[checked]:ring-led-edge dark:ring-white/25">
+            <span className="size-1.5 rounded-full bg-led-ink opacity-0 group-data-[checked]:opacity-100" />
+          </span>
+          <span className="min-w-0">
+            <span className="block text-sm/6 font-medium">{o.title}</span>
+            <span className="block text-sm/6 text-zinc-600 dark:text-zinc-400">{o.text}</span>
+          </span>
+        </Radio>
+      ))}
+    </RadioGroup>
+  )
+}
+
+/** Seconds the trace shows. */
+const TRACE_S = 4
+
+type Raw = { x: number; y: number } | null
+
+interface Lane {
+  name: string
+  /** As games see it. */
+  get(s: Session): number | null
+  /** The same before anti-jitter, from feature report 0x26. */
+  raw(r: Raw, s: Session): number | null
+  /** Each lane zooms in on its own range, never closer than this. */
+  minSpan: number
+  unit?: string
+}
+
+/** Raw y on the handbrake axis, mapped from the calibration as the firmware does. */
+function rawAxis(r: Raw, s: Session): number | null {
+  const st = s.status
+  if (!r || !st) return null
+  const lo = st.neutral[1] - 300
+  const hi = st.handbrake[1] + 100
+  if (lo <= hi) return null
+  return Math.min(100, Math.max(0, ((lo - r.y) / (lo - hi)) * 100))
+}
+
+const LANES: Lane[] = [
+  { name: 'Lever x', get: (s) => s.status?.x ?? null, raw: (r) => r?.x ?? null, minSpan: 40 },
+  { name: 'Lever y', get: (s) => s.status?.y ?? null, raw: (r) => r?.y ?? null, minSpan: 40 },
+]
+const AXIS_LANE: Lane = { name: 'Handbrake axis', get: (s) => (s.inputs.handbrake / 65535) * 100, raw: rawAxis,
+  minSpan: 5, unit: '%' }
+
+/** The lever position over the last few seconds, as the shifter reports it,
+ * over the raw sensor reading in grey, so what anti-jitter removes shows at
+ * once. Each lane zooms in on its own range. With anti-jitter on, the raw
+ * reading comes in report 0x26; with it off, the reported position is the raw
+ * one. The trace sends nothing to the shifter: in Chrome, every command or
+ * feature request holds input reports back for tens of milliseconds. */
+function LeverTrace({ session, handbrake, level }: { session: Session; handbrake: boolean; level: number }) {
+  const canvas = useRef<HTMLCanvasElement>(null)
+  const [hasRaw, setHasRaw] = useState(false)
+  const lanes = handbrake ? [...LANES, AXIS_LANE] : LANES
+  useEffect(() => {
+    const c = canvas.current
+    const ctx = c?.getContext('2d')
+    if (!c || !ctx) return
+    const pts: { t: number; v: (number | null)[]; r: (number | null)[] }[] = []
+    const views: ([number, number] | null)[] = lanes.map(() => null)
+    let frame = 0
+    let rawSeen = false
+    const draw = (t: number) => {
+      const st = session.status
+      const raw: Raw = level ? (t - session.rawAt < 100 ? session.raw : null) : st && { x: st.x, y: st.y }
+      if (!!raw !== rawSeen) { rawSeen = !!raw; setHasRaw(rawSeen) }
+      pts.push({ t, v: lanes.map((l) => l.get(session)), r: lanes.map((l) => l.raw(raw, session)) })
+      while (pts.length && pts[0].t < t - TRACE_S * 1000) pts.shift()
+      const dpr = window.devicePixelRatio || 1
+      const w = c.clientWidth
+      const h = c.clientHeight
+      if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) {
+        c.width = Math.round(w * dpr)
+        c.height = Math.round(h * dpr)
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+      ctx.clearRect(0, 0, w, h)
+      const style = getComputedStyle(c)
+      const laneH = h / lanes.length
+      ctx.font = '12px system-ui, sans-serif'
+      lanes.forEach((lane, i) => {
+        const top = i * laneH
+        if (i) {
+          ctx.strokeStyle = style.borderColor
+          ctx.lineWidth = 1
+          ctx.beginPath()
+          ctx.moveTo(0, top)
+          ctx.lineTo(w, top)
+          ctx.stroke()
+        }
+        let lo = Infinity
+        let hi = -Infinity
+        for (const q of pts) {
+          for (const v of [q.v[i], q.r[i]]) if (v !== null) { lo = Math.min(lo, v); hi = Math.max(hi, v) }
+        }
+        if (lo > hi) return
+        // The range to show, eased so a change of zoom is easy to follow.
+        const span = Math.max(lane.minSpan, (hi - lo) * 1.2)
+        const want: [number, number] = [(lo + hi) / 2 - span / 2, (lo + hi) / 2 + span / 2]
+        const view = views[i]
+        const [v0, v1] = views[i] = view
+          ? [view[0] + (want[0] - view[0]) * 0.2, view[1] + (want[1] - view[1]) * 0.2] : want
+        const py = (v: number) => top + 22 + (laneH - 28) * (1 - (v - v0) / (v1 - v0))
+        const line = (color: string, width: number, get: (q: (typeof pts)[number]) => number | null) => {
+          ctx.strokeStyle = color
+          ctx.lineWidth = width
+          ctx.lineJoin = 'round'
+          ctx.beginPath()
+          let open = false
+          for (const q of pts) {
+            const v = get(q)
+            if (v === null) { open = false; continue }
+            const x = w - ((t - q.t) / (TRACE_S * 1000)) * w
+            if (open) ctx.lineTo(x, py(v))
+            else ctx.moveTo(x, py(v))
+            open = true
+          }
+          ctx.stroke()
+        }
+        line(style.outlineColor, 1.5, (q) => q.r[i])
+        line(style.color, 2, (q) => q.v[i])
+        const last = pts[pts.length - 1].v[i]
+        ctx.fillStyle = style.textDecorationColor
+        ctx.textBaseline = 'top'
+        ctx.fillText(`${lane.name}  ${last === null ? '–' : Math.round(last) + (lane.unit ?? '')}`, 8, top + 6)
+      })
+      frame = requestAnimationFrame(draw)
+    }
+    frame = requestAnimationFrame(draw)
+    return () => cancelAnimationFrame(frame)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, handbrake, level])
+  return (
+    <div className="mt-4">
+      <div className="flex flex-wrap items-center gap-x-4 text-sm/6 text-zinc-600 dark:text-zinc-400">
+        <span className="inline-flex items-center gap-1.5">
+          <span aria-hidden className="h-0.5 w-4 rounded-full bg-led-edge" />As games see it
+        </span>
+        {hasRaw && (
+          <span className="inline-flex items-center gap-1.5">
+            <span aria-hidden className="h-0.5 w-4 rounded-full bg-zinc-400 dark:bg-zinc-500" />Raw sensor reading
+          </span>
+        )}
+      </div>
+      <canvas ref={canvas} aria-hidden style={{ height: `${lanes.length * 4.5}rem` }}
+        className="mt-1.5 block w-full rounded-lg bg-zinc-950/[0.03] text-led-edge ring-1 ring-inset ring-zinc-950/10 border-zinc-950/10 outline-zinc-400 decoration-zinc-600 dark:bg-white/5 dark:ring-white/10 dark:border-white/10 dark:outline-zinc-500 dark:decoration-zinc-300" />
+      <p className="mt-1.5 text-sm/6 text-zinc-600 dark:text-zinc-400">Last {TRACE_S} seconds.</p>
+    </div>
+  )
+}
+
+const JITTER_OPTIONS = [
+  { value: 0, title: 'None', text: 'The raw reading. The lever position twitches even when you hold it still.' },
+  { value: 1, title: 'Low', text: 'Hides the sensor noise. Slow moves arrive about 2 ms later.' },
+  { value: 2, title: 'Medium', text: 'Also stays still when your hand shakes a little.' },
+  { value: 3, title: 'High', text: 'Steadiest. Slow moves arrive about 7 ms later.' },
+]
+
 export function SettingsPanel({ session, status, firmware, onPinAccent, onOpenFirmware }:
   { session: Session; status: Status | null; firmware: Firmware | null; onPinAccent(c: RGB | null): void; onOpenFirmware(): void }) {
   if (!status || !firmware) return <p className="text-sm/6 text-zinc-600 dark:text-zinc-400">Reading the shifter…</p>
@@ -302,17 +472,20 @@ export function SettingsPanel({ session, status, firmware, onPinAccent, onOpenFi
     )
   }
   return <OpenShifterSettings session={session} status={status} balance={firmware.balance} neutral={firmware.neutral}
-    onPinAccent={onPinAccent} />
+    antiJitter={firmware.antiJitter} onPinAccent={onPinAccent} />
 }
 
-function OpenShifterSettings({ session, status, balance, neutral, onPinAccent }:
-  { session: Session; status: Status; balance: boolean; neutral: boolean; onPinAccent(c: RGB | null): void }) {
+function OpenShifterSettings({ session, status, balance, neutral, antiJitter, onPinAccent }:
+  { session: Session; status: Status; balance: boolean; neutral: boolean; antiJitter: boolean
+    onPinAccent(c: RGB | null): void }) {
   const logo = useImmediate(session, status.logo, (v) => [CMD_LOGO, +v], (st, v) => st.logo === v, 'logo LED')
   const highlow = useImmediate(session, status.highlowToggle, (v) => [CMD_HIGHLOW, +v],
     (st, v) => st.highlowToggle === v, 'high/low')
   const gamma = useImmediate(session, status.gamma, (v) => [CMD_GAMMA, +v], (st, v) => st.gamma === v, 'gamma')
   const neutralButton = useImmediate(session, status.neutralButton, (v) => [CMD_NEUTRAL, +v],
     (st, v) => st.neutralButton === v, 'neutral button')
+  const jitter = useImmediate(session, status.antiJitter, (v) => [CMD_JITTER, v], (st, v) => st.antiJitter === v,
+    'anti-jitter')
   const [wbColor, setWbColor] = useState<RGB | null>(null)
   const onEditing = useCallback((c: RGB | null) => { setWbColor(c); onPinAccent(c) }, [onPinAccent])
   const options = [
@@ -339,24 +512,24 @@ function OpenShifterSettings({ session, status, balance, neutral, onPinAccent }:
         )}
       </Section>
       <Section title="High/low button" description="How the button next to the lever behaves.">
-        <RadioGroup value={highlow.value} onChange={highlow.set} disabled={highlow.state.busy} aria-label="High/low button"
-          className="grid gap-3 sm:grid-cols-2">
-          {options.map((o) => (
-            <Radio key={o.title} value={o.value}
-              className={cx('group relative flex cursor-pointer gap-3 rounded-xl bg-white p-4 ring-1 ring-inset ring-zinc-950/10 ' +
-                'data-[checked]:bg-led/10 data-[checked]:ring-2 data-[checked]:ring-led-edge data-[disabled]:cursor-not-allowed ' +
-                'dark:bg-white/5 dark:ring-white/10 dark:data-[checked]:bg-led/10', focusRing)}>
-              <span aria-hidden className="mt-1 flex size-4 shrink-0 items-center justify-center rounded-full ring-1 ring-inset ring-zinc-950/25 group-data-[checked]:bg-led group-data-[checked]:ring-led-edge dark:ring-white/25">
-                <span className="size-1.5 rounded-full bg-led-ink opacity-0 group-data-[checked]:opacity-100" />
-              </span>
-              <span className="min-w-0">
-                <span className="block text-sm/6 font-medium">{o.title}</span>
-                <span className="block text-sm/6 text-zinc-600 dark:text-zinc-400">{o.text}</span>
-              </span>
-            </Radio>
-          ))}
-        </RadioGroup>
+        <RadioCards label="High/low button" value={highlow.value} onChange={highlow.set} disabled={highlow.state.busy}
+          options={options} className="sm:grid-cols-2" />
         <div className="mt-2"><SavedNote state={highlow.state} /></div>
+      </Section>
+      <Section title="Anti-jitter"
+        description="The lever's magnet sensor reads a little noise even when the lever is still. Anti-jitter steadies the lever position, and with it the gears, the shifts and the handbrake axis. Quick moves are never delayed.">
+        {antiJitter ? (
+          <>
+            <RadioCards label="Anti-jitter" value={jitter.value} onChange={jitter.set} disabled={jitter.state.busy}
+              options={JITTER_OPTIONS} className="sm:grid-cols-2" />
+            <div className="mt-2"><SavedNote state={jitter.state} /></div>
+            <LeverTrace session={session} handbrake={status.mode === MODE_HANDBRAKE} level={status.antiJitter} />
+          </>
+        ) : (
+          <p className="text-sm/6 text-zinc-600 dark:text-zinc-400">
+            Anti-jitter needs OpenShifter 0.6.0 or newer. Update from the Firmware tab.
+          </p>
+        )}
       </Section>
       <Section title="Neutral button" description="For games that keep the last gear until you pick another one.">
         {neutral ? (

@@ -33,6 +33,8 @@
 #define SH_OPT_RANGE_TOGGLE  0x02u    /* high/low button latches */
 #define SH_OPT_GAMMA         0x08u    /* gamma 2.2 on the LED output */
 #define SH_OPT_NEUTRAL       0x10u    /* HID button 1 held in H-pattern neutral */
+#define SH_OPT_JITTER        0x60u    /* anti-jitter level 0 to 3 on the lever position */
+#define SH_OPT_JITTER_SHIFT  5
 
 /* Default LED colour and white balance (a gain per channel, 255 = full),
  * both set by eye on a unit. Its blue and green LEDs are much brighter than
@@ -137,6 +139,12 @@ typedef struct {
     uint8_t  gear_gap;       /* samples left of the neutral between two gears */
     uint8_t  led_test;       /* chain position lit white by 24 3F, 0xFF = off */
     uint8_t  booting;        /* 24 00 received: all LEDs yellow */
+    uint8_t  jit_ready;      /* jit_avg and jit_held follow the lever */
+    int16_t  jit_held[3];    /* anti-jitter output for x, y, s14, held inside a band */
+    uint32_t jit_avg[3];     /* running averages of x, y, s14, each + 32768, Q4 */
+    uint8_t  jit_far[3];     /* samples the average has stayed over half a band away */
+    int16_t  jit_raw[3];     /* x, y, s14 as last read: report 0x26, and to spot a bad read */
+    uint8_t  jit_skipped;    /* the last frame was skipped as a bad read */
 } shifter_t;
 
 void     shifter_init(shifter_t *s);
@@ -157,6 +165,9 @@ unsigned shifter_command(shifter_t *s, const uint8_t *buf, unsigned len);
 
 void     shifter_report1(const shifter_t *s, uint8_t out[5]);
 void     shifter_report36(const shifter_t *s, uint8_t out[64]);
+void     shifter_report_raw(const shifter_t *s, uint8_t out[5]);
+/* 1 while report 0x26 is sent: whenever anti-jitter is on. */
+int      shifter_raw_wanted(const shifter_t *s);
 void     shifter_uart_packet(const shifter_t *s, uint8_t out[16]);
 /* Wire order G,R,B for the three WS2812 LEDs, in chain order; all zero when
  * asleep. */

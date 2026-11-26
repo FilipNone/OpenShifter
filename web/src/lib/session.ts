@@ -3,23 +3,29 @@
 // commands that are checked against a fresh status, as in openshifter_ctl.py.
 import type { InputReport, ShifterDevice } from './hid'
 import { readVersion } from './flash'
-import { PID_BOOT, REPORT_ID, Status, command, compareVersions, parseInputs, type Inputs, type Lever } from './protocol'
+import {
+  PID_BOOT, RAW_REPORT_ID, REPORT_ID, Status, command, compareVersions, parseInputs, parseRaw, type Inputs, type Lever,
+} from './protocol'
 
 export type Firmware =
   | { kind: 'bootloader' }
   | { kind: 'stock' }
   /** `version` is exact from 0.4.0 on; older builds only show what they support. */
-  | { kind: 'openshifter'; version: string | null; balance: boolean; neutral: boolean }
+  | { kind: 'openshifter'; version: string | null; balance: boolean; neutral: boolean; antiJitter: boolean }
 
 export class SessionError extends Error {}
 
-/** Status reports averaged for the lever: 24 ms at the shifter's rate. */
+/** Status reports averaged for the lever: 24 ms at the shifter's rate, 48 ms
+ * with anti-jitter on (report 0x26 then takes every other slot). */
 const LEVER_SAMPLES = 12
 
 export class Session {
   readonly device: ShifterDevice
   status: Status | null = null
   inputs: Inputs = { gears: 0, buttons: 0, handbrake: 0 }
+  /** The lever before anti-jitter, from report 0x26 (sent while anti-jitter is on). */
+  raw: { x: number; y: number } | null = null
+  rawAt = 0
   version: string | null = null
   private waiters: ((s: Status) => void)[] = []
   private recent: Lever[] = []
@@ -33,6 +39,9 @@ export class Session {
       for (const f of w) f(this.status)
     } else if (e.reportId === 1 && e.data.byteLength >= 2) {
       this.inputs = parseInputs(e.data)
+    } else if (e.reportId === RAW_REPORT_ID) {
+      this.raw = parseRaw(e.data)
+      this.rawAt = performance.now()
     }
   }
 
@@ -75,8 +84,8 @@ export class Session {
     if (!st) return null
     if (!st.hasOptions) return { kind: 'stock' }
     const balance = this.version !== null || st.gains.some((g) => g !== 0)
-    const neutral = this.version !== null && compareVersions(this.version, '0.5.0') >= 0
-    return { kind: 'openshifter', version: this.version, balance, neutral }
+    const atLeast = (v: string) => this.version !== null && compareVersions(this.version, v) >= 0
+    return { kind: 'openshifter', version: this.version, balance, neutral: atLeast('0.5.0'), antiJitter: atLeast('0.6.0') }
   }
 
   nextStatus(timeoutMs = 1000): Promise<Status> {

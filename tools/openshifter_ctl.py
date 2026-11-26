@@ -7,7 +7,7 @@ Talks to the shifter through /dev/hidrawN with the same 64-byte output report
 to confirm each change. Settings are saved on the shifter. Status and
 calibration also work with the stock firmware; the LED and button settings
 need OpenShifter 0.2.0 or newer, white balance and gamma 0.3.0 or newer, the
-neutral button 0.5.0 or newer.
+neutral button 0.5.0 or newer, anti-jitter 0.6.0 or newer.
 
 Access to /dev/hidraw* needs root or the udev rule printed by
 `openshifter_flash.py udev-rule`.
@@ -31,6 +31,7 @@ CMD_HIGHLOW = 0x32
 CMD_BALANCE = 0x33
 CMD_GAMMA = 0x34
 CMD_NEUTRAL = 0x35
+CMD_JITTER = 0x36
 CMD_LED_TEST = 0x3F
 
 OPT_LOGO = 0x01
@@ -38,11 +39,13 @@ OPT_RANGE_TOGGLE = 0x02
 OPT_RANGE_ON = 0x04
 OPT_GAMMA = 0x08
 OPT_NEUTRAL = 0x10
+OPT_JITTER = 0x60        # anti-jitter level in bits 5-6
 OPT_PRESENT = 0x80
 
 DEFAULT_COLOR = (255, 182, 78)     # warm orange, as in the firmware
 DEFAULT_GAINS = (255, 162, 96)     # white balance, as in the firmware
 MODES = {0: 'H-pattern', 1: 'sequential', 2: 'handbrake'}
+JITTER_LEVELS = ('none', 'low', 'medium', 'high')
 
 # calibration target names -> 24 21 argument
 TARGETS = {f'gear{k}': k for k in range(1, 9)}
@@ -85,6 +88,7 @@ class Status:
     highlow_on = property(lambda self: bool(self.raw[23] & OPT_RANGE_ON))
     gamma = property(lambda self: bool(self.raw[23] & OPT_GAMMA))
     neutral_button = property(lambda self: bool(self.raw[23] & OPT_NEUTRAL))
+    jitter = property(lambda self: (self.raw[23] & OPT_JITTER) >> 5)
     gains = property(lambda self: (self.raw[24], self.raw[53], self.raw[54]))
 
     def gear(self, k):
@@ -217,6 +221,8 @@ def show_status(sh: Shifter, out=None):
             say(f'gamma      {"on" if st.gamma else "off"}', out)
         if (openshifter_version(sh.info) or (0,)) >= (0, 5, 0):
             say(f'neutral button {"on" if st.neutral_button else "off"}', out)
+        if (openshifter_version(sh.info) or (0,)) >= (0, 6, 0):
+            say(f'anti-jitter {JITTER_LEVELS[st.jitter]}', out)
     say(f'lever      x={st.x} y={st.y}', out)
     say('calibration', out)
     say(f'  neutral    {st.neutral}', out)
@@ -285,6 +291,14 @@ def cmd_neutral(sh, args, out=None):
     on = args.state == 'on'
     set_and_check(sh, (CMD_NEUTRAL, int(on)), lambda st: st.neutral_button == on, 'neutral button')
     say(f'neutral button {args.state} (saved)', out)
+    return 0
+
+
+def cmd_jitter(sh, args, out=None):
+    need_options(sh, (0, 6, 0))
+    level = JITTER_LEVELS.index(args.level)
+    set_and_check(sh, (CMD_JITTER, level), lambda st: st.jitter == level, 'anti-jitter')
+    say(f'anti-jitter {args.level} (saved)', out)
     return 0
 
 
@@ -443,6 +457,8 @@ def main(argv=None, bus=None, inp=None, out=None, opener=open_hidraw):
     s = sub.add_parser('neutral', help='hold button 1 while the lever is in neutral, '
                        'for games that need a neutral binding (off by default)')
     s.add_argument('state', choices=['on', 'off'])
+    s = sub.add_parser('anti-jitter', help='steady the lever position: none (default), low, medium or high')
+    s.add_argument('level', choices=JITTER_LEVELS)
     sub.add_parser('identify-leds', help='light each LED in turn to find which is which')
     args = p.parse_args(argv)
 
@@ -454,6 +470,7 @@ def main(argv=None, bus=None, inp=None, out=None, opener=open_hidraw):
                 'balance': lambda sh: cmd_balance(sh, args, out, inp),
                 'gamma': lambda sh: cmd_gamma(sh, args, out),
                 'neutral': lambda sh: cmd_neutral(sh, args, out),
+                'anti-jitter': lambda sh: cmd_jitter(sh, args, out),
                 'identify-leds': lambda sh: cmd_identify(sh, args, out, inp)}
     try:
         sh = open_shifter(bus or LinuxBus(), args.device, opener)

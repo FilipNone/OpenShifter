@@ -65,8 +65,17 @@ static void in_send_one(void)
         in_due &= (uint8_t)~IN_R1;
         in_next = IN_R36;
     } else {
-        shifter_report36(&sh, r);
-        usb_in_send(r, 64);
+        /* With anti-jitter on, every other 0x24 slot carries 0x26, so the
+         * host gets no more reports than usual. */
+        static uint8_t raw_turn;
+        raw_turn = shifter_raw_wanted(&sh) && !raw_turn;
+        if (raw_turn) {
+            shifter_report_raw(&sh, r);
+            usb_in_send(r, 5);
+        } else {
+            shifter_report36(&sh, r);
+            usb_in_send(r, 64);
+        }
         in_due &= (uint8_t)~IN_R36;
         in_next = IN_R1;
     }
@@ -89,6 +98,10 @@ unsigned usb_get_report(uint8_t report_id, uint8_t *out)
     if (report_id == 0x24) {
         shifter_report36(&sh, out);
         return 64;
+    }
+    if (report_id == 0x26) {
+        shifter_report_raw(&sh, out);
+        return 5;
     }
     return 0;
 }

@@ -8,10 +8,11 @@ import { orientation, slot, tilt, toGate, toSequential } from './gate'
 import type { ShifterDevice } from './hid'
 import { findOpenShifterVersion, loadImage, problems } from './image'
 import {
-  BTN_NEUTRAL, CHUNK, CMD_NEUTRAL, DEFAULT_COLOR, PID_APP, PID_BOOT, REPORT_ID, Status, chunk, chunkCount, command,
-  compareVersions, engagedGear, parseVersion,
+  BTN_NEUTRAL, CHUNK, CMD_JITTER, CMD_NEUTRAL, DEFAULT_COLOR, PID_APP, PID_BOOT, REPORT_ID, Status, chunk, chunkCount, command,
+  compareVersions, engagedGear, parseRaw, parseVersion,
 } from './protocol'
 import { POSES, SimShifter, type SimOptions } from './sim'
+import { Session } from './session'
 import { UDEV_RULE } from './udev'
 
 const BIN = join(__dirname, '..', '..', '..', 'firmware', 'build', 'openshifter.bin')
@@ -107,6 +108,47 @@ describe('protocol', () => {
     sim.switchH = false
     sim.lever = POSES.neutral
     expect(sim.inputs()[1]).toBe(0)
+  })
+
+  it('sets the anti-jitter level from 0.6.0', async () => {
+    const open = async (version: string) => {
+      const sim = new SimShifter({ firmware: fakeImage(4000, `OpenShifter ${version}`) })
+      const s = new Session((await sim.bus().devices())[0], (ms) => sim.bus().sleep(ms))
+      const t = setInterval(() => sim.emit(), 5)
+      try {
+        await s.start()
+        return { sim, s, fw: s.firmware, stop: () => clearInterval(t) }
+      } catch (e) { clearInterval(t); throw e }
+    }
+    const old = await open('0.5.0')
+    expect(old.fw).toMatchObject({ kind: 'openshifter', neutral: true, antiJitter: false })
+    await old.s.write(CMD_JITTER, 2)
+    expect(new Status(old.sim.status()).antiJitter).toBe(0)
+    old.stop()
+
+    const cur = await open('0.6.0')
+    expect(cur.fw).toMatchObject({ kind: 'openshifter', antiJitter: true })
+    for (const level of [3, 1, 2, 0]) {
+      const st = await cur.s.setAndCheck([CMD_JITTER, level], (x) => x.antiJitter === level, 'anti-jitter')
+      expect(st.raw[23] & 0x60).toBe(level << 5)
+    }
+    await cur.s.write(CMD_JITTER, 4)
+    expect(new Status(cur.sim.status()).antiJitter).toBe(0)
+    cur.sim.lever = [-1234, 567]
+    cur.s.raw = null
+    await cur.s.freshStatus()
+    expect(cur.s.raw).toBeNull()
+    await cur.s.setAndCheck([CMD_JITTER, 1], (x) => x.antiJitter === 1, 'anti-jitter')
+    expect(cur.s.raw).toEqual({ x: -1234, y: 567 })
+    old.sim.emit()
+    expect(old.s.raw).toBeNull()
+    cur.stop()
+  })
+
+  it('reads the raw report with or without the report ID', () => {
+    expect(parseRaw(new DataView(new Uint8Array([0x26, 0xfb, 0x2e, 0x02, 0x37]).buffer))).toEqual({ x: -1234, y: 567 })
+    expect(parseRaw(new DataView(new Uint8Array([0xfb, 0x2e, 0x02, 0x37]).buffer))).toEqual({ x: -1234, y: 567 })
+    expect(parseRaw(new DataView(new Uint8Array([0x26, 1]).buffer))).toBeNull()
   })
 })
 

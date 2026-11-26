@@ -90,8 +90,16 @@ int settings_write(const uint16_t st[SH_SETTINGS_HALFWORDS])
     }
     if (!changed)
         return 0;
+    /* A unit froze when the host sent control requests during a settings
+     * write: the erase never finished. So the USB block takes no packets while
+     * the flash is busy (usb_pause), and no interrupt runs then either. Reports
+     * and the clock pause for the write, about 25 ms. */
     write_active = 1;
+    irq_disable();
+    usb_pause();
     int err = write_page();
+    usb_unpause();
+    irq_enable();
     write_active = 0;
     return err ? -1 : 1;
 }
@@ -130,6 +138,7 @@ void enter_bootloader(void)
         for (unsigned i = 0; i < PAGE_HALFWORDS; i++)
             page[i] = *flash_hw(i);
     page[SETTINGS_BOOT_FLAG] = 1;
+    usb_pause();
     if (write_page() && write_page())
         flash_failed();
     board_reset();

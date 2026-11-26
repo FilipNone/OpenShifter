@@ -4,9 +4,9 @@ OpenShifter has been tested without hardware, in three layers. Run them all with
 
 | Suite | Tests | What it covers |
 |---|---|---|
-| `tests/test_shifter.py` | 24 | the gear/sensor core built for the host with trapping UBSan, against exact float oracles; the OpenShifter settings, LEDs and buttons; when settings are written to flash |
-| `tests/test_emulated.py` | 26 | the real `openshifter.bin`, and the stock image, on an emulated board |
-| `tests/test_ctl.py` | 10 | `openshifter_ctl.py` against the shifter core running in a thread |
+| `tests/test_shifter.py` | 33 | the gear/sensor core built for the host with trapping UBSan, against exact float oracles; the OpenShifter settings, LEDs and buttons; anti-jitter; when settings are written to flash |
+| `tests/test_emulated.py` | 29 | the real `openshifter.bin`, and the stock image, on an emulated board |
+| `tests/test_ctl.py` | 11 | `openshifter_ctl.py` against the shifter core running in a thread |
 | `tests/test_flasher.py` | 21 | the flasher against a simulated bootloader and a fake sysfs tree |
 
 ## The emulator (`tests/emu`)
@@ -90,14 +90,27 @@ real bugs were found this way and fixed:
 - 40 colour changes in a row cost one flash erase, made 1 s after the last
   one; after 16 writes the next change waits, though the LEDs already show it
 - `24 00` writes a waiting change before it resets
+- with anti-jitter at high, a lever held with sensor noise reports still x
+  and y in H and a still handbrake axis, where none follows the noise; a full
+  pull still reaches 65535 at once, report 0x26 keeps giving the raw reading,
+  and the level survives a power cycle
+- with anti-jitter on, report 0x26 takes every other report 0x24 slot, with the
+  total report rate unchanged; with it off there is no report 0x26
+- control requests every 15 ms through a settings write: no USB packet and no
+  interrupt while the flash is busy, and only requests during the write fail
 - with a worn settings page, `24 00` tries the flag twice, then leaves USB and
   blinks red instead of resetting
 
 `SettingsWrites` in `test_shifter.py` checks the write timing itself with a
 fake clock: the 1 s wait, the 16-write burst, one more write per minute after
-that, and the clock wrapping after 49 days.
+that, and the clock wrapping after 49 days. `AntiJitter` checks each level
+against noise on x, y and z at neutral, in a gear and on the handbrake; gear 7
+right at its limit (the raw reading keeps dropping and taking it); shifts and
+handbrake yanks (the same reports at the same samples as none); slow moves;
+calibration on a noisy sensor; a single bad read (skipped) and a real jump
+(at most one frame later); report 0x26; and a restart after the sensor resets.
 
-None of these tests may write flash outside the FPEC rules. The emulator records every program and erase and checks it.
+None of these tests may write flash outside the FPEC rules. The emulator records every program and erase and checks it. An erase takes 20 ms and a halfword 50 µs in the emulator, and taking an interrupt or a USB packet in that time is a violation too (a unit froze that way). The differential tests turn that timing off, because stock writes for about 70 ms and its timing would no longer match.
 
 ## Intentional differences
 
@@ -118,7 +131,8 @@ None of these tests may write flash outside the FPEC rules. The emulator records
 | Gear and sequential debounce | 20 samples (40 ms) | 5 samples (10 ms) (`Core.test_calibration_round_trip_and_gears`); not yet checked on a real unit |
 | Handbrake button LED | lit in every mode; green in handbrake mode | the set colour in H, off in sequential mode, green in handbrake mode |
 | High/low button (A) | a button | a button, or a latching toggle (`24 32 1`) with a red/green LED |
-| Report descriptor | 11 buttons in nested application collections without a usage; Linux maps them to `BTN_0`.. and udev does not tag a joystick | one Joystick collection with the 12 report bits as buttons 2 to 13, button 1 for the optional neutral button (`24 35 1`), padding, Z and report 0x24 on vendor page `0xFF00` (`OpenShifter.test_report_descriptor`); not yet checked on a real host |
+| Report descriptor | 11 buttons in nested application collections without a usage; Linux maps them to `BTN_0`.. and udev does not tag a joystick | one Joystick collection with the 12 report bits as buttons 2 to 13, button 1 for the optional neutral button (`24 35 1`), padding, Z, and reports 0x24, 0x25 and 0x26 on vendor page `0xFF00` (`OpenShifter.test_report_descriptor`); not yet checked on a real host |
+| Lever position | raw | optional anti-jitter on x, y and z (`24 36`, none by default); none gives stock's values |
 | Report 0x24 bytes 23, 24, 53, 54 | 0 | OpenShifter options and white balance |
 | Settings halfwords 0x50 to 0x56 | unused | OpenShifter options, colour and white balance |
 
@@ -142,8 +156,7 @@ Some timings differ by a few tens of milliseconds, all measured in the emulator:
   - USB electrical and timing behaviour of the AIR32 USB block
   - the AIR32 PLL at 72 MHz (the stock image only shows its 216 MHz configuration)
   - the flash page size
-  - the delayed settings writes and the red stop after a failed flag write
-    have only run in the emulator
+  - the red stop after a failed flag write has only run in the emulator
 - **The vendor bootloader.** It is not in any update package, so the flasher
   is tested against a simulator written from Tuner's code. Two real updates
   went through it without errors; an interrupted update has not been tried. See

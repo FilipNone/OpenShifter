@@ -34,9 +34,10 @@ def stock_image():
 class Rig:
     """One powered shifter on a simulated USB host."""
 
-    def __init__(self, image, settings=None, *, h_pattern=False, enumerate=True, pos=(0, 0, 0x80)):
+    def __init__(self, image, settings=None, *, h_pattern=False, enumerate=True, pos=(0, 0, 0x80), flash_busy=True):
         self.image = image
-        self.m = Machine(image, settings)
+        self.flash_busy = flash_busy
+        self.m = Machine(image, settings, flash_busy=flash_busy)
         self.m.buttons['PB10'] = h_pattern
         self.m.host.auto_enumerate = enumerate
         self.m.set_position(*pos)
@@ -127,4 +128,5 @@ class Rig:
 
     def reboot(self, **kw):
         """Power-cycle with the flash contents this unit has written."""
+        kw.setdefault('flash_busy', self.flash_busy)
         return type(self)(self.image, self.settings_page(), **kw)

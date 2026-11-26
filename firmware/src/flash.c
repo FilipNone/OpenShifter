@@ -8,7 +8,9 @@
  */
 #include "flash.h"
 #include "board.h"
+#include "periph.h"
 #include "regs.h"
+#include "usb.h"
 
 #define PAGE_HALFWORDS 1024
 
@@ -91,7 +93,24 @@ int settings_write(const uint16_t st[SH_SETTINGS_HALFWORDS])
     write_active = 1;
     int err = write_page();
     write_active = 0;
-    return err;
+    return err ? -1 : 1;
+}
+
+/* The flag cannot be written, so a reset would only start the application
+ * again, and a fault would come back here and erase again. Leave the bus and
+ * blink red until the unit is unplugged. */
+static __attribute__((noreturn)) void flash_failed(void)
+{
+    static const uint8_t red[9] = {0, 170, 0, 0, 170, 0, 0, 170, 0};
+    static const uint8_t off[9];
+    usb_detach();
+    leds_init();
+    for (unsigned n = 0;; n++) {
+        while (leds_busy())
+            ;
+        leds_show(n & 1 ? off : red);
+        delay_cycles(g_sysclk_hz / 4);   /* 250 ms */
+    }
 }
 
 void enter_bootloader(void)
@@ -111,6 +130,7 @@ void enter_bootloader(void)
         for (unsigned i = 0; i < PAGE_HALFWORDS; i++)
             page[i] = *flash_hw(i);
     page[SETTINGS_BOOT_FLAG] = 1;
-    write_page();
+    if (write_page() && write_page())
+        flash_failed();
     board_reset();
 }

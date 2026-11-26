@@ -13,6 +13,8 @@ extern volatile uint16_t usb_reset_count;
 
 /* Drop off the bus, wait, come back. Blocking. */
 void usb_reconnect(void);
+/* Drop off the bus and stay off. */
+void usb_detach(void);
 void usb_init(void);
 void usb_irq_handler(void);
 

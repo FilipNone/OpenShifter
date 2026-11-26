@@ -10,6 +10,7 @@
 | A gear is detected wrong | [Calibrate](Calibrate) again, then unplug the shifter and plug it back in. |
 | No gear shows right after plugging in | Move the lever through neutral once. |
 | The Settings tab says it needs OpenShifter | The shifter runs the stock firmware. [Install OpenShifter](Install) first. |
+| All the LEDs blink red | The shifter could not write to its memory while going into update mode, and stopped. Unplug it and plug it back in: it should start normally. If it happens again, [open an issue](https://github.com/FilipNone/OpenShifter/issues). |
 | Linux: games see two shifters, or every press twice | You have the `hid-velocityone-multi-shift` driver installed. OpenShifter does not need it: stop and remove it. |
 
 ## Start in update mode by hand

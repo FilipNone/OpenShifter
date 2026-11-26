@@ -26,12 +26,16 @@ except ImportError:
 import openshifter_flash as flasher  # noqa: E402
 from harness import OPENSHIFTER_BIN, Rig, openshifter_image, stock_image  # noqa: E402
 from test_flasher import STOCK_REPORT_DESCRIPTOR  # noqa: E402
-from test_shifter import led  # noqa: E402  (LED colour reference)
+from test_shifter import SAVE_BURST, SAVE_QUIET_MS, led  # noqa: E402  (LED colour reference)
 
 if not OPENSHIFTER_BIN.exists():
     raise unittest.SkipTest('build the firmware first: make -C firmware')
 
 VERSION = flasher.Image(openshifter_image()).openshifter_version
+
+# Long enough for a settings change to reach flash.
+SETTLE_MS = SAVE_QUIET_MS + 100
+RED, DARK = bytes([0, 170, 0]) * 3, bytes(9)
 
 GEARS = [(1986, 2400, 0x80), (2400, -1886, 0x80), (40, 3175, 0x80), (70, -2536, 0x80),
          (-1956, 1720, 0x80), (-2576, -1856, 0x80), (-866, 170, 0x70), (-1116, -236, 0x70)]
@@ -52,6 +56,11 @@ def calibrate(r, hb_first=True):
     if not hb_first:
         hb()
     r.move(0, 0)
+    r.run(SETTLE_MS)
+
+
+def erases(r):
+    return sum(e[0] == 'erase' for e in r.m.flash_events)
 
 
 class EmulatedCase(unittest.TestCase):
@@ -226,6 +235,7 @@ class OpenShifter(EmulatedCase):
         blue, red = led(30, 60, 90), led(255, 0, 0)
         self.assertEqual(r.m.led_frames[-1][1], blue + blue + red)
         self.assertEqual(r.last(0x24)[23], 0x83)
+        r.run(SETTLE_MS)
         self.assertFlashClean(r)
 
         r = r.reboot(h_pattern=True).boot()
@@ -248,6 +258,57 @@ class OpenShifter(EmulatedCase):
         r.press('PA5', hold=False, ms=100)
         self.assertEqual(r.last(0x24)[63], 2)
         self.assertEqual(r.m.led_frames[-1][1][:3], led(0, 255, 0))
+        self.assertFlashClean(r)
+
+    def test_settings_are_written_once_they_stop_changing(self):
+        r = Rig(openshifter_image(), h_pattern=True).boot()
+        r.run(SETTLE_MS)
+        n = erases(r)
+        for i in range(40):
+            r.command(0x24, 0x30, i, 255 - i, 7, ms=10)
+        self.assertEqual(erases(r), n, 'written while the colour was still changing')
+        r.run(SETTLE_MS)
+        self.assertEqual(erases(r), n + 1)
+        self.assertEqual(r.m.settings()[0x51:0x54], [39, 216, 7])
+        self.assertFlashClean(r)
+
+    def test_writes_are_limited_after_a_burst(self):
+        r = Rig(openshifter_image(), h_pattern=True).boot()
+        r.run(SETTLE_MS)
+        left = SAVE_BURST - erases(r)   # a blank page is written once at boot
+        for i in range(left + 1):
+            r.command(0x24, 0x30, i, 0, 0, ms=SETTLE_MS)
+        self.assertEqual(erases(r), SAVE_BURST)
+        self.assertEqual(r.m.settings()[0x51:0x54], [left - 1, 0, 0], 'the last change should wait')
+        self.assertEqual(r.last(0x24)[6:9], bytes([left, 0, 0]), 'the last change should be in use')
+        self.assertFlashClean(r)
+
+    def test_update_command_writes_waiting_settings_first(self):
+        r = Rig(openshifter_image()).boot()
+        r.run(SETTLE_MS)
+        t0 = r.m.time_us
+        r.command(0x24, 0x30, 1, 2, 3, ms=0)
+        r.command(*flasher.command(flasher.CMD_BOOT), ms=0)
+        r.m.run(ms=1000)
+        self.assertEnteredBootloader(r)
+        self.assertLess(r.reset_events()[0] - t0, SAVE_QUIET_MS * 1000, 'waited for the quiet time')
+        self.assertEqual(r.m.settings()[0x51:0x54], [1, 2, 3])
+
+    def test_worn_settings_page_stops_with_red_leds(self):
+        """If the bootloader flag cannot be written, a reset would start the
+        application again (or loop through a fault): stop instead."""
+        r = Rig(openshifter_image()).boot()
+        r.run(SETTLE_MS)
+        r.m.flash_worn = True
+        t0 = r.m.time_us
+        r.command(*flasher.command(flasher.CMD_BOOT), ms=0)
+        r.m.run(ms=2500)
+        self.assertEqual(r.reset_events(), [], 'reset with the flag not set')
+        self.assertEqual(sum(e[0] == 'erase-failed' for e in r.m.flash_events), 2, 'one try and one retry')
+        self.assertEqual(r.m.host.state, 'detached', 'still on USB')
+        frames = [f for t, f in r.m.led_frames if t > t0 and f != led(255, 255, 0) * 3]
+        self.assertGreaterEqual(len(frames), 4)
+        self.assertEqual(frames[:4], [RED, DARK, RED, DARK])
         self.assertFlashClean(r)
 
 
@@ -428,6 +489,7 @@ class MatchesStock(EmulatedCase):
             for x, y, z in steps:
                 r.move(x, y, z)
                 out.append(r.state())
+            r.run(SETTLE_MS)
             return out, r.settings_page()
         (a, pa), (b, pb) = self.both(sc)
         for i, (x, y) in enumerate(zip(a, b)):
@@ -450,6 +512,7 @@ class MatchesStock(EmulatedCase):
             r.move(-300, -1500)
             r.command(0x24, 0x21, 10)
             snap('cal 10')
+            r.run(SETTLE_MS)
             page1 = r.settings_page()
             r = r.reboot(h_pattern=True).boot()
             snap('reboot')
@@ -480,7 +543,7 @@ class MatchesStock(EmulatedCase):
             r.press('PA4', hold=True, ms=100)
             r.press('PA4', hold=False, ms=100)
             snap('A toggle')
-            r.run(300)
+            r.run(SETTLE_MS)
             return log, page1, r.settings_page(), [f for _, f in r.m.led_frames[-3:]]
         a, b = self.both(sc)
         for x, y in zip(a[0], b[0]):

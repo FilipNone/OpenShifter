@@ -4,10 +4,10 @@ OpenShifter has been tested without hardware, in three layers. Run them all with
 
 | Suite | Tests | What it covers |
 |---|---|---|
-| `tests/test_shifter.py` | 17 | the gear/sensor core built for the host with trapping UBSan, against exact float oracles; the OpenShifter settings, LEDs and buttons |
-| `tests/test_emulated.py` | 20 | the real `openshifter.bin`, and the stock image, on an emulated board |
-| `tests/test_ctl.py` | 9 | `openshifter_ctl.py` against the shifter core running in a thread |
-| `tests/test_flasher.py` | 19 | the flasher against a simulated bootloader and a fake sysfs tree |
+| `tests/test_shifter.py` | 24 | the gear/sensor core built for the host with trapping UBSan, against exact float oracles; the OpenShifter settings, LEDs and buttons; when settings are written to flash |
+| `tests/test_emulated.py` | 26 | the real `openshifter.bin`, and the stock image, on an emulated board |
+| `tests/test_ctl.py` | 10 | `openshifter_ctl.py` against the shifter core running in a thread |
+| `tests/test_flasher.py` | 21 | the flasher against a simulated bootloader and a fake sysfs tree |
 
 ## The emulator (`tests/emu`)
 
@@ -19,7 +19,8 @@ OpenShifter has been tested without hardware, in three layers. Run them all with
   - GPIO and bit-band
   - TIM3 PWM and DMA, used for the LEDs
   - USART1 DMA
-  - flash (FPEC, with programming rules checked on every write)
+  - flash (FPEC, with programming rules checked on every write), and a worn
+    settings page that refuses every erase and write
   - the USB device peripheral and its packet memory
 - the boot ROM table the stock image calls during PLL setup
 - the MLX90393 at pin level (the firmware bit-bangs SPI)
@@ -36,7 +37,8 @@ and the settings page contents, byte for byte.
 OpenShifter's own settings start differently from stock (logo off, a warm
 colour), so these tests give both images a settings page with logo on, gamma
 off, stock's yellow and full gains in halfwords 0x50 to 0x56, which stock
-ignores. The remaining differences are checked explicitly, not skipped: report
+ignores. Settings pages are compared after waiting long enough for
+OpenShifter's delayed write (see below). The remaining differences are checked explicitly, not skipped: report
 0x24 bytes 23, 24, 53 and 54 are cleared after they are checked, OpenShifter's
 report descriptor (and its length in the HID descriptor) is checked against
 the expected one and then replaced with stock's, and LED frames in sequential mode are compared with the handbrake LED
@@ -85,6 +87,15 @@ real bugs were found this way and fixed:
   high/low toggle, the handbrake button in H and the handbrake LED in SEQ
 - both input reports keep flowing when the host polls only every 2 ms or
   misses frames (0.3.0 failed this: report 0x24 dropped to about 3 per second)
+- 40 colour changes in a row cost one flash erase, made 1 s after the last
+  one; after 16 writes the next change waits, though the LEDs already show it
+- `24 00` writes a waiting change before it resets
+- with a worn settings page, `24 00` tries the flag twice, then leaves USB and
+  blinks red instead of resetting
+
+`SettingsWrites` in `test_shifter.py` checks the write timing itself with a
+fake clock: the 1 s wait, the 16-write burst, one more write per minute after
+that, and the clock wrapping after 49 days.
 
 None of these tests may write flash outside the FPEC rules. The emulator records every program and erase and checks it.
 
@@ -95,9 +106,9 @@ None of these tests may write flash outside the FPEC rules. The emulator records
 | iConfiguration | 0 (none) | string 4, "OpenShifter x.y.z" |
 | GET_REPORT | returns a fixed buffer of unrelated RAM | returns the current report 1 or 0x24 |
 | Control SET_REPORT | ignored if short; a 64-byte one crashes (jump to 0) | runs the command, like interrupt OUT |
-| Recovery | none | High/low and Handbrake buttons held at power-up, fault, 3 s stall, host never configuring, PLL failure: all enter the vendor bootloader |
+| Recovery | none | High/low and Handbrake buttons held at power-up, fault, 3 s stall, host never configuring, PLL failure: all enter the vendor bootloader. If the flag cannot be written, the unit leaves USB and blinks red |
 | System clock | 216 MHz | 72 MHz; delays use stock's effective durations |
-| Settings write | read-modify-write of 0x400 halfwords, assuming 2 KB pages | erase, then program only halfwords that need it; works with 1 KB or 2 KB pages; same resulting page |
+| Settings write | read-modify-write of 0x400 halfwords, assuming 2 KB pages, on every change | erase, then program only halfwords that need it; works with 1 KB or 2 KB pages; same resulting page. Written once nothing has changed for 1 s, at most 16 writes in a row, then one a minute; `24 00` writes at once |
 | Default LED colour | yellow (255 255 0) | 255 182 78 (warm orange), settable with `24 30` |
 | LED output | colour × 2/3 | optional gamma 2.2 (`24 34 1`, off by default) and a white balance gain per channel, then × 2/3; gamma off and gains of 255 give stock's output |
 | Logo LED | always lit | off unless turned on (`24 31 1`) |
@@ -131,6 +142,8 @@ Some timings differ by a few tens of milliseconds, all measured in the emulator:
   - USB electrical and timing behaviour of the AIR32 USB block
   - the AIR32 PLL at 72 MHz (the stock image only shows its 216 MHz configuration)
   - the flash page size
+  - the delayed settings writes and the red stop after a failed flag write
+    have only run in the emulator
 - **The vendor bootloader.** It is not in any update package, so the flasher
   is tested against a simulator written from Tuner's code. Two real updates
   went through it without errors; an interrupted update has not been tried. See
@@ -150,7 +163,7 @@ Some timings differ by a few tens of milliseconds, all measured in the emulator:
 ```sh
 pip install -r requirements-dev.txt          # unicorn 2.1.4
 make -C firmware                              # builds build/openshifter.bin
-make -C firmware test                         # all suites (about 4 minutes)
+make -C firmware test                         # all suites (about 6 minutes)
 python3 -m unittest discover -s tests -p test_flasher.py -v   # just one suite
 ```
 

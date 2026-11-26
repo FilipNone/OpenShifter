@@ -604,6 +604,12 @@ void usb_reconnect(void)
     delay_ms(STOCK_MS(200));
 }
 
+void usb_detach(void)
+{
+    USB_AIR_DPPU = 0;
+    USB_CNTR = CNTR_FRES | CNTR_PDWN;
+}
+
 void usb_init(void)
 {
     RCC_APB1ENR |= APB1_USB;

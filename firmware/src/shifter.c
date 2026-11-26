@@ -1007,3 +1007,41 @@ void shifter_led_grb(const shifter_t *s, int asleep, uint8_t out[9])
     if (s->options & SH_OPT_LOGO)
         led_put(s, out, SH_LED_LOGO, r, g, b);
 }
+
+/* ---- settings writes ---------------------------------------------------- */
+
+void sh_saves_init(sh_saves_t *v)
+{
+    v->changed_ms = 0;
+    v->refill_ms = 0;
+    v->pending = 0;
+    v->allowance = SH_SAVE_BURST;
+}
+
+void sh_saves_changed(sh_saves_t *v, uint32_t now_ms)
+{
+    v->pending = 1;
+    v->changed_ms = now_ms;
+}
+
+int sh_saves_take(sh_saves_t *v, uint32_t now_ms, int urgent)
+{
+    while (v->allowance < SH_SAVE_BURST && now_ms - v->refill_ms >= SH_SAVE_REFILL_MS) {
+        v->allowance++;
+        v->refill_ms += SH_SAVE_REFILL_MS;
+    }
+    if (v->allowance >= SH_SAVE_BURST)
+        v->refill_ms = now_ms;
+    if (!v->pending)
+        return 0;
+    if (!urgent && (now_ms - v->changed_ms < SH_SAVE_QUIET_MS || !v->allowance))
+        return 0;
+    v->pending = 0;
+    return 1;
+}
+
+void sh_saves_spent(sh_saves_t *v)
+{
+    if (v->allowance)
+        v->allowance--;
+}

@@ -68,7 +68,7 @@ const SAVED_MS = 2500
 
 function useSave() {
   const [s, set] = useState<SaveState>({ busy: false, error: null, saved: false })
-  const timer = useRef<ReturnType<typeof setTimeout>>()
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   useEffect(() => () => clearTimeout(timer.current), [])
   const run = useCallback(async (f: () => Promise<unknown>) => {
     clearTimeout(timer.current)

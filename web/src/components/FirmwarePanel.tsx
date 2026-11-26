@@ -283,7 +283,7 @@ function ImageFacts({ image }: { image: FirmwareImage }) {
 
 function RunView({ run, headingRef, bootMode, onAllow, onStop, onClose, onCalibrate }: {
   run: Exclude<Run, { state: 'idle' }>
-  headingRef: React.RefObject<HTMLHeadingElement>
+  headingRef: React.RefObject<HTMLHeadingElement | null>
   bootMode: boolean
   onAllow(which: 'boot' | 'app'): void
   onStop(which: 'boot' | 'app'): void
